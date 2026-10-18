@@ -96,6 +96,7 @@ node tests/regression.js
 │   └── preview/            # 桌面与移动端截图
 ├── tests/
 │   └── regression.js       # jsdom 回归测试(64 项)
+├── versions/               # v1–v3 历史快照(仅供回看)
 ├── CHANGELOG.md
 └── README.md
 ```

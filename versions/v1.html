@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>漏钱账本 · 每天多少钱悄悄溜走</title>
+<style>
+  :root{
+    --bg:#faf9f7;
+    --ink:#1c1917;
+    --ink-2:#57534e;
+    --ink-3:#8a8580;
+    --line:#e7e3de;
+    --line-strong:#d6d1cb;
+    --paper:#ffffff;
+    --accent:#b42318;          /* 唯一强调色:深红“漏损” */
+    --accent-soft:#fdecea;
+    --accent-ink:#8c1d16;
+    --ok:#1a7f4e;
+    --ok-soft:#e8f3ee;
+    --radius:14px;
+    --radius-sm:9px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;
+    font-size:15px;
+    line-height:1.6;
+    min-height:100dvh;
+  }
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+  .wrap{max-width:980px;margin:0 auto;padding:0 20px 88px}
+
+  /* ---------- 顶部 ---------- */
+  header.top{
+    display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+    padding:26px 0 8px;flex-wrap:wrap;
+  }
+  .brand{display:flex;align-items:baseline;gap:12px}
+  .brand h1{font-size:19px;font-weight:700;letter-spacing:.02em}
+  .brand .tagline{font-size:13px;color:var(--ink-3)}
+  .top-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+  /* ---------- 漏钱仪表 ---------- */
+  .meter{
+    border:1px solid var(--line);
+    border-top:3px solid var(--accent);
+    background:var(--paper);
+    border-radius:var(--radius);
+    padding:30px 30px 24px;
+    margin-top:18px;
+    display:grid;
+    grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);
+    gap:28px;
+    align-items:stretch;
+  }
+  .meter .label{
+    font-size:12px;letter-spacing:.14em;color:var(--ink-3);font-weight:600;
+    text-transform:uppercase;
+  }
+  .big-day{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .big-day .cur{font-size:26px;font-weight:600;color:var(--accent)}
+  .big-day .val{
+    font-size:72px;font-weight:700;letter-spacing:-.03em;line-height:1;
+    color:var(--accent);transition:opacity .18s ease;
+  }
+  .big-day .val.bump{animation:bump .32s ease}
+  @keyframes bump{0%{transform:translateY(3px);opacity:.35}100%{transform:none;opacity:1}}
+  .big-day .unit{font-size:15px;color:var(--ink-2)}
+  .equiv{
+    margin-top:14px;padding-top:14px;border-top:1px dashed var(--line-strong);
+    color:var(--ink-2);font-size:14px;max-width:52ch;
+  }
+  .equiv b{color:var(--ink)}
+  .side-facts{display:flex;flex-direction:column;justify-content:center;gap:0}
+  .fact{padding:13px 0;border-bottom:1px solid var(--line)}
+  .fact:last-child{border-bottom:none}
+  .fact .k{font-size:13px;color:var(--ink-3)}
+  .fact .v{font-size:24px;font-weight:700;letter-spacing:-.01em}
+  .fact .v small{font-size:13px;font-weight:500;color:var(--ink-3);margin-left:2px}
+  .fact .hint{font-size:12px;color:var(--ink-3)}
+
+  /* ---------- 区块通用 ---------- */
+  section{margin-top:44px}
+  .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .sec-head h2{font-size:17px;font-weight:700;letter-spacing:.01em}
+  .sec-head .sub{font-size:13px;color:var(--ink-3)}
+
+  /* ---------- 表单 ---------- */
+  .panel{
+    background:var(--paper);border:1px solid var(--line);
+    border-radius:var(--radius);padding:22px;
+  }
+  .form-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px 16px}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field.span-4{grid-column:span 4}
+  .field.span-3{grid-column:span 3}
+  .field.span-6{grid-column:span 6}
+  .field.span-12{grid-column:span 12}
+  label{font-size:13px;font-weight:600;color:var(--ink-2)}
+  label .opt{font-weight:400;color:var(--ink-3);font-size:12px}
+  input,select{
+    font:inherit;font-size:15px;color:var(--ink);
+    background:var(--bg);border:1px solid var(--line-strong);
+    border-radius:var(--radius-sm);padding:9px 12px;width:100%;
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  input:hover,select:hover{border-color:#c4beb6}
+  input:focus,select:focus{
+    outline:none;border-color:var(--accent);
+    box-shadow:0 0 0 3px rgba(180,35,24,.14);
+  }
+  input::placeholder{color:#a8a29b}
+  select{appearance:none;-webkit-appearance:none;
+    background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2357534e' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;
+  }
+  .form-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px;flex-wrap:wrap}
+  .form-error{color:var(--accent-ink);font-size:13px}
+  .editing-note{font-size:13px;color:var(--ink-2)}
+  .editing-note b{color:var(--accent-ink)}
+
+  /* ---------- 按钮 ---------- */
+  button{font:inherit;cursor:pointer;transition:transform .06s ease,background .15s ease,border-color .15s ease}
+  button:active{transform:translateY(1px)}
+  .btn{
+    border-radius:var(--radius-sm);padding:9px 18px;font-size:14px;font-weight:600;
+    border:1px solid transparent;white-space:nowrap;
+  }
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-primary:hover{background:#9e1e14}
+  .btn-ghost{background:transparent;color:var(--ink-2);border-color:var(--line-strong)}
+  .btn-ghost:hover{border-color:#b9b3ab;color:var(--ink)}
+  .btn-danger{background:transparent;color:var(--accent-ink);border-color:#ecc8c4}
+  .btn-danger:hover{background:var(--accent-soft)}
+  .btn-ok{background:transparent;color:var(--ok);border-color:#cfe3d8}
+  .btn-ok:hover{background:var(--ok-soft)}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .btn-sm{padding:5px 11px;font-size:13px}
+
+  /* ---------- 清单 ---------- */
+  .item{
+    display:grid;
+    grid-template-columns:minmax(0,1.5fr) minmax(0,.9fr) auto;
+    gap:6px 20px;align-items:center;
+    padding:15px 18px;background:var(--paper);
+    border:1px solid var(--line);border-radius:var(--radius);
+    margin-bottom:10px;
+  }
+  .item.paused .name,.item.paused .amounts{opacity:.42}
+  .item.paused{background:#f5f4f2;border-style:dashed}
+  .item-main{min-width:0}
+  .name{font-weight:600;font-size:15px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .cat-chip{
+    font-size:11px;font-weight:600;color:var(--ink-2);
+    background:var(--bg);border:1px solid var(--line);
+    border-radius:999px;padding:1px 9px;white-space:nowrap;
+  }
+  .cat-chip.acc{color:var(--accent-ink);background:var(--accent-soft);border-color:#f2d7d4}
+  .name .search{font-size:12px;color:var(--ink-3)}
+  .amounts{display:flex;align-items:baseline;gap:14px;justify-content:flex-end}
+  .amounts .d{font-size:15px;font-weight:700}
+  .amounts .d .per{font-size:12px;font-weight:500;color:var(--ink-3)}
+  .amounts .m{font-size:13px;color:var(--ink-3)}
+  .item-rank{
+    grid-column:1/-1;height:4px;border-radius:2px;background:var(--bg);
+    overflow:hidden;
+  }
+  .item-rank i{display:block;height:100%;background:var(--accent);border-radius:2px;opacity:.75}
+  .item-actions{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+  .due{font-size:12px;color:var(--ink-2)}
+  .due.warn{color:var(--accent-ink);font-weight:600}
+
+  /* ---------- 分类流失 ---------- */
+  .cat-block{margin-bottom:16px}
+  .cat-row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:14px}
+  .cat-row .c-name{font-weight:600}
+  .cat-row .c-amounts{color:var(--ink-2)}
+  .cat-row .c-amounts b{color:var(--ink)}
+  .cat-bar{height:10px;border-radius:5px;background:var(--bg);border:1px solid var(--line);margin-top:7px;overflow:hidden}
+  .cat-bar i{display:block;height:100%;background:var(--accent);opacity:.8}
+
+  /* ---------- 空态/说明 ---------- */
+  .empty{
+    text-align:center;padding:44px 20px;color:var(--ink-3);
+    border:1px dashed var(--line-strong);border-radius:var(--radius);background:transparent;
+  }
+  .empty .big{font-size:40px;line-height:1}
+  .empty p{margin-top:10px;font-size:14px}
+  .empty .btn{margin-top:16px}
+  .footnote{margin-top:48px;border-top:1px solid var(--line);padding-top:18px;font-size:12.5px;color:var(--ink-3);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+
+  /* ---------- 弹窗 ---------- */
+  .modal-mask{position:fixed;inset:0;background:rgba(28,25,23,.45);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal-mask.open{display:flex}
+  .modal{background:var(--paper);border-radius:var(--radius);padding:24px;max-width:420px;width:100%;box-shadow:0 18px 60px rgba(0,0,0,.22)}
+  .modal h3{font-size:16px;margin-bottom:8px}
+  .modal p{color:var(--ink-2);font-size:14px;margin-bottom:18px}
+  .modal .row{display:flex;gap:10px;justify-content:flex-end}
+
+  /* ---------- toast ---------- */
+  #toast{
+    position:fixed;left:50%;bottom:28px;transform:translateX(-50%) translateY(14px);
+    background:var(--ink);color:#faf7f2;padding:9px 18px;border-radius:999px;
+    font-size:13.5px;opacity:0;pointer-events:none;transition:all .22s ease;z-index:60;white-space:nowrap;
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width:760px){
+    .meter{grid-template-columns:1fr;padding:22px 20px}
+    .big-day .val{font-size:56px}
+    .field.span-4{grid-column:span 6}
+    .field.span-3{grid-column:span 6}
+    .field.span-6{grid-column:span 12}
+    .item{grid-template-columns:1fr auto}
+    .item-actions{grid-column:1/-1;justify-content:flex-start}
+    .item-main{grid-column:1/-1}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation:none!important;transition:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <h1>漏钱账本</h1>
+      <span class="tagline">会员费 · 话费 · 房租 · 水电,都在按天流走</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn btn-ghost btn-sm" id="btn-demo" type="button">填入示例数据</button>
+      <button class="btn btn-ghost btn-sm" id="btn-export" type="button">导出备份</button>
+      <button class="btn btn-ghost btn-sm" id="btn-import" type="button">导入备份</button>
+      <input type="file" id="file-import" accept="application/json,.json" hidden>
+    </div>
+  </header>
+
+  <!-- 漏钱仪表 -->
+  <div class="meter">
+    <div>
+      <div class="label">今天悄悄溜走</div>
+      <div class="big-day">
+        <span class="cur num">¥</span><span class="val num" id="daily">0.00</span><span class="unit">/ 天</span>
+      </div>
+      <div class="equiv" id="equiv">把每一笔固定开支都换算成“每天流走多少”,再相加。</div>
+    </div>
+    <div class="side-facts">
+      <div class="fact">
+        <div class="k">折合每月 / 每年</div>
+        <div class="v num" id="per-month">¥0.00 <small>/ 月</small></div>
+        <div class="hint num" id="per-year">约 ¥0.00 / 年</div>
+      </div>
+      <div class="fact">
+        <div class="k">开始记账以来</div>
+        <div class="v num" id="drained">¥0.00</div>
+        <div class="hint num" id="drained-days">坚持第 1 天</div>
+      </div>
+      <div class="fact">
+        <div class="k">在流动的开支</div>
+        <div class="v num" id="active-count">0 笔</div>
+        <div class="hint" id="paused-hint">暂停的会停表,但不会忘记</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 新增 / 编辑 -->
+  <section>
+    <div class="sec-head">
+      <h2 id="form-title">记一笔固定开支</h2>
+      <span class="sub">金额和扣费周期决定它每天流走多快</span>
+    </div>
+    <div class="panel">
+      <form id="form" novalidate>
+        <div class="form-grid">
+          <div class="field span-4">
+            <label for="f-name">名称 / 平台</label>
+            <input id="f-name" type="text" placeholder="如:视频网站会员、手机话费" maxlength="30" autocomplete="off">
+          </div>
+          <div class="field span-3">
+            <label for="f-cat">类别</label>
+            <select id="f-cat"></select>
+          </div>
+          <div class="field span-3">
+            <label for="f-amount">金额</label>
+            <input id="f-amount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="field span-2">
+            <label for="f-cycle">周期</label>
+            <select id="f-cycle">
+              <option value="month">每月</option>
+              <option value="quarter">每季</option>
+              <option value="year">每年</option>
+              <option value="once">单次</option>
+            </select>
+          </div>
+          <div class="field span-4">
+            <label for="f-date">下次扣费日 <span class="opt">(选填,用来倒计时)</span></label>
+            <input id="f-date" type="date">
+          </div>
+        </div>
+        <div class="form-foot">
+          <span class="editing-note" id="editing-note" hidden>正在编辑:<b id="editing-name"></b></span>
+          <span class="form-error" id="form-error" hidden></span>
+          <div style="display:flex;gap:10px;margin-left:auto">
+            <button class="btn btn-ghost" id="btn-cancel" type="button" hidden>取消</button>
+            <button class="btn btn-primary" id="btn-save" type="submit">添加</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- 清单 -->
+  <section>
+    <div class="sec-head">
+      <h2>流失清单</h2>
+      <span class="sub">按“每天流走多少”从快到慢排序</span>
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <!-- 分类 -->
+  <section>
+    <div class="sec-head">
+      <h2>钱从哪里漏</h2>
+      <span class="sub">各类别折算到每日的流失量</span>
+    </div>
+    <div class="panel" id="cats"></div>
+  </section>
+
+  <div class="footnote">
+    <span>数据只保存在这台电脑的浏览器里(localStorage),不联网、不上传。换浏览器 = 换一本账,记得常导出备份。</span>
+    <button class="btn btn-danger btn-sm" id="btn-clear" type="button">清空全部数据</button>
+  </div>
+</div>
+
+<!-- 删除确认 -->
+<div class="modal-mask" id="confirm-mask">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <h3 id="confirm-title">删除这笔开支?</h3>
+    <p id="confirm-text">删除后无法恢复(除非有备份)。</p>
+    <div class="row">
+      <button class="btn btn-ghost" id="confirm-cancel" type="button">先不删</button>
+      <button class="btn btn-danger" id="confirm-ok" type="button">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" role="status"></div>
+
+<script>
+"use strict";
+
+/* ---------------- 存档 ---------------- */
+const KEY = "leak-ledger-v1";
+const CATS = [
+  {id:"vip",  label:"会员订阅"},
+  {id:"rent", label:"房租住房"},
+  {id:"comm", label:"话费网费"},
+  {id:"util", label:"水电燃气"},
+  {id:"other",label:"其他固定"}
+];
+const CYCLE_LABEL = {month:"每月", quarter:"每季", year:"每年", once:"单次"};
+const DAYS = {month:30.4375, quarter:91.3125, year:365.25, once:0};
+
+let state = load();
+let editingId = null;
+let pendingDeleteId = null;
+
+function defaults(){
+  return {items:[], createdAt:Date.now()};
+}
+function load(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(KEY));
+    if(raw && Array.isArray(raw.items)) return raw;
+  }catch(e){}
+  return defaults();
+}
+function save(){
+  try{
+    localStorage.setItem(KEY, JSON.stringify(state));
+  }catch(e){ toast("保存失败:浏览器存储被限制"); }
+}
+
+/* ---------------- 计算 ---------------- */
+const toNum = v => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : 0; };
+const money = n => n.toLocaleString("zh-CN",{minimumFractionDigits:2, maximumFractionDigits:2});
+const moneyInt = n => Math.round(n).toLocaleString("zh-CN");
+
+function dailyRate(it){
+  if(it.cycle === "once") return 0;
+  return toNum(it.amount) / DAYS[it.cycle];
+}
+function monthlyOf(it){
+  if(it.cycle === "once") return it.paused ? 0 : toNum(it.amount);
+  return it.paused ? 0 : dailyRate(it) * DAYS.month;
+}
+
+function stats(){
+  const active = state.items.filter(i => !i.paused);
+  const daily = active.reduce((s,i)=>s+dailyRate(i),0);
+  const onceTotal = state.items.filter(i=>i.cycle==="once"&&!i.paused)
+    .reduce((s,i)=>s+toNum(i.amount),0);
+  const days = Math.max(1, Math.floor((Date.now()-state.createdAt)/86400000)+1);
+  const drained = daily*days + onceTotal;
+  return {daily, days, drained, onceTotal,
+    activeCount:active.length, pausedCount:state.items.length-active.length};
+}
+
+/* ---------------- 渲染:仪表 ---------------- */
+function renderMeter(){
+  const s = stats();
+  const el = document.getElementById("daily");
+  el.textContent = money(s.daily);
+  el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump");
+
+  document.getElementById("per-month").innerHTML =
+    "¥" + money(s.daily*DAYS.month) + " <small>/ 月</small>";
+  document.getElementById("per-year").textContent =
+    "约 ¥" + moneyInt(s.daily*DAYS.year) + " / 年";
+  document.getElementById("drained").textContent = "¥" + money(s.drained);
+  document.getElementById("drained-days").textContent =
+    "坚持第 " + s.days + " 天(自 " + fmtDate(state.createdAt) + ")";
+  document.getElementById("active-count").textContent = s.activeCount + " 笔" +
+    (s.pausedCount ? ` · ${s.pausedCount} 笔已暂停` : "");
+
+  const teas = s.daily/15, films = s.daily*DAYS.month/40;
+  const parts = [];
+  if(s.daily > 0){
+    parts.push("每一天,这些费用都在趁你不注意溜走:大约相当于");
+    parts.push(`<b>${round1(teas)} 杯奶茶</b>(¥15)`);
+    if(films >= 1) parts.push(`,或 <b>${round1(films)} 场电影</b>(¥40/场)`);
+    parts.push(`。一年下来,是 <b>¥${moneyInt(s.daily*DAYS.year)}</b> 的整数大事。`);
+  }else if(s.onceTotal > 0){
+    parts.push(`目前没有按周期烧钱的项目,单次支出共 ¥${money(s.onceTotal)}。`);
+  }else{
+    parts.push("把每一笔固定开支都换算成“每天流走多少”,再相加。");
+  }
+  document.getElementById("equiv").innerHTML = parts.join("");
+}
+const round1 = n => n >= 100 ? moneyInt(n) : (Math.round(n*10)/10).toString();
+function fmtDate(t){
+  const d = new Date(t);
+  return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`;
+}
+
+/* ---------------- 渲染:清单 ---------------- */
+function renderList(){
+  const box = document.getElementById("list");
+  if(state.items.length === 0){
+    box.innerHTML = `
+      <div class="empty">
+        <div class="big">◌</div>
+        <p>还没有任何记录。随手记上正在交钱的会员、话费、房租、水电,<br>它们就会开始二十四小时为你计损。</p>
+        <button class="btn btn-primary" id="btn-load-demo" type="button">没有头绪?看看示例</button>
+      </div>`;
+    document.getElementById("btn-load-demo").addEventListener("click", loadDemo);
+    return;
+  }
+  const withRate = state.items.map(i => ({...i, _d: dailyRate(i)}));
+  const max = Math.max(...withRate.filter(i=>i._d>0).map(i=>i._d), 0.0001);
+
+  box.innerHTML = withRate
+    .sort((a,b)=> b._d - a._d || (b.createdAt||0)-(a.createdAt||0))
+    .map(it => {
+      const cat = CATS.find(c=>c.id===it.cat) || CATS[4];
+      const dTxt = it._d > 0 ? "¥"+money(it._d)+"<span class='per'>/天</span>"
+               : "¥"+money(toNum(it.amount))+"<span class='per'>单次</span>";
+      const mTxt = it.cycle==="once" ? "不计入日常" :
+          "月折算 ¥"+money(monthlyOf(it) || dailyRate(it)*DAYS.month);
+      const barW = it._d > 0 ? Math.max(3, it._d/max*100).toFixed(1)+"%" : "0%";
+      const due = dueText(it);
+      return `
+      <div class="item ${it.paused?"paused":""}" data-id="${it.id}">
+        <div class="item-main">
+          <div class="name">${esc(it.name)}
+            <span class="cat-chip ${it.paused?"":"acc"}">${cat.label}</span>
+            <span class="cat-chip">${CYCLE_LABEL[it.cycle]} ¥${money(toNum(it.amount))}</span>
+            ${due}
+          </div>
+        </div>
+        <div class="amounts num"><span class="d">${dTxt}</span><span class="m">${mTxt}</span></div>
+        <div class="item-actions">
+          <button class="btn btn-ghost btn-sm" data-act="edit" type="button">编辑</button>
+          <button class="btn ${it.paused?"btn-ok":"btn-ghost"} btn-sm" data-act="toggle" type="button">
+            ${it.paused?"恢复":"暂停"}</button>
+          <button class="btn btn-danger btn-sm" data-act="del" type="button">删除</button>
+        </div>
+        ${it._d>0 ? `<div class="item-rank" aria-hidden="true"><i style="width:${barW}"></i></div>` : ""}
+      </div>`;
+    }).join("");
+}
+
+function dueText(it){
+  if(!it.paused && it.due){
+    const t = Math.ceil((new Date(it.due+"T23:59:59") - Date.now())/86400000);
+    if(t > 0){
+      const warn = t <= 3 ? " warn" : "";
+      return `<span class="due${warn}">下次扣费:${t===1?"明天":t+" 天后"}</span>`;
+    }
+  }
+  return "";
+}
+const esc = s => String(s).replace(/[&<>"']/g, m =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+
+/* ---------------- 渲染:分类 ---------------- */
+function renderCats(){
+  const box = document.getElementById("cats");
+  const perCat = CATS.map(c=>{
+    const items = state.items.filter(i=>i.cat===c.id && !i.paused);
+    return {label:c.label, d:items.reduce((s,i)=>s+dailyRate(i),0), n:items.length};
+  });
+  const max = Math.max(...perCat.map(c=>c.d), 0);
+  box.innerHTML = perCat.filter(c=>c.n>0).map(c=>`
+    <div class="cat-block">
+      <div class="cat-row">
+        <span class="c-name">${c.label}</span>
+        <span class="c-amounts num"><b>¥${money(c.d)}</b> / 天 · 月折算 ¥${money(c.d*DAYS.month)}</span>
+      </div>
+      <div class="cat-bar" aria-hidden="true"><i style="width:${max?(c.d/max*100).toFixed(1):0}%"></i></div>
+    </div>`).join("")
+    || `<p style="color:var(--ink-3);font-size:14px;text-align:center;padding:16px 0">还没有流动中的开支。</p>`;
+}
+
+/* ---------------- 表单 ---------------- */
+const $ = id => document.getElementById(id);
+function fillCatSelect(){
+  $("f-cat").innerHTML = CATS.map(c=>`<option value="${c.id}">${c.label}</option>`).join("");
+}
+
+$("form").addEventListener("submit", e=>{
+  e.preventDefault();
+  const name = $("f-name").value.trim();
+  const amount = toNum($("f-amount").value);
+  const err = $("form-error");
+  if(!name){ showFormError(err,"先给它起个名字"); return; }
+  if(!amount){ showFormError(err,"金额需要是大于 0 的数字"); return; }
+  err.hidden = true;
+
+  const item = {
+    id: editingId || ("i" + Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
+    name, cat:$("f-cat").value, amount, cycle:$("f-cycle").value,
+    due:$("f-date").value || "", paused:false, createdAt:Date.now()
+  };
+  if(editingId){
+    const i = state.items.findIndex(x=>x.id===editingId);
+    item.createdAt = state.items[i].createdAt;
+    item.paused = state.items[i].paused;
+    state.items[i] = item;
+    toast("已更新");
+  }else{
+    state.items.push(item);
+    toast(`已加入:每天流走 ¥${money(item.cycle==="once"?0:dailyRate(item))}`);
+  }
+  exitEdit(); save(); renderAll();
+});
+
+function showFormError(el, msg){ el.textContent = "⚠ " + msg; el.hidden = false; }
+function startEdit(id){
+  const it = state.items.find(x=>x.id===id); if(!it) return;
+  editingId = id;
+  $("f-name").value = it.name; $("f-cat").value = it.cat;
+  $("f-amount").value = it.amount; $("f-cycle").value = it.cycle;
+  $("f-date").value = it.due || "";
+  $("btn-save").textContent = "保存修改";
+  $("btn-cancel").hidden = false;
+  $("editing-name").textContent = it.name;
+  $("editing-note").hidden = false;
+  $("form-title").textContent = "编辑这笔开支";
+  window.scrollTo({top:0, behavior:"smooth"});
+  setTimeout(()=>$("f-name").focus(), 350);
+}
+function exitEdit(){
+  editingId = null; $("form").reset();
+  $("btn-save").textContent = "添加";
+  $("btn-cancel").hidden = true;
+  $("editing-note").hidden = true;
+  $("form-error").hidden = true;
+  $("form-title").textContent = "记一笔固定开支";
+}
+$("btn-cancel").addEventListener("click", exitEdit);
+
+/* ---------------- 清单事件(委托) ---------------- */
+$("list").addEventListener("click", e=>{
+  const btn = e.target.closest("button[data-act]"); if(!btn) return;
+  const id = btn.closest(".item").dataset.id;
+  const it = state.items.find(x=>x.id===id); if(!it) return;
+  if(btn.dataset.act === "edit") startEdit(id);
+  if(btn.dataset.act === "toggle"){
+    it.paused = !it.paused;
+    toast(it.paused ? "已暂停,不再计入流失" : "已恢复计损");
+    save(); renderAll();
+  }
+  if(btn.dataset.act === "del"){
+    pendingDeleteId = id;
+    $("confirm-text").textContent = `「${it.name}」将被永久删除,无法恢复(除非有备份)。`;
+    $("confirm-mask").classList.add("open");
+  }
+});
+$("confirm-cancel").addEventListener("click", ()=> $("confirm-mask").classList.remove("open"));
+$("confirm-mask").addEventListener("click", e=>{
+  if(e.target === e.currentTarget) $("confirm-mask").classList.remove("open");
+});
+$("confirm-ok").addEventListener("click", ()=>{
+  state.items = state.items.filter(x=>x.id !== pendingDeleteId);
+  $("confirm-mask").classList.remove("open");
+  toast("已删除"); save(); renderAll();
+});
+
+/* ---------------- 备份 ---------------- */
+$("btn-export").addEventListener("click", ()=>{
+  if(state.items.length === 0){ toast("账本是空的,先记几笔"); return; }
+  const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "漏钱账本备份-" + new Date().toISOString().slice(0,10) + ".json";
+  a.click(); URL.revokeObjectURL(a.href);
+  toast("备份已下载");
+});
+$("btn-import").addEventListener("click", ()=> $("file-import").click());
+$("file-import").addEventListener("change", e=>{
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const raw = JSON.parse(r.result);
+      if(raw && Array.isArray(raw.items)){
+        const merged = new Map(state.items.map(i=>[i.id,i]));
+        raw.items.forEach(i=>{ if(i && i.name) merged.set(i.id || "i"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), i); });
+        state.items = [...merged.values()];
+        if(raw.createdAt) state.createdAt = Math.min(state.createdAt, raw.createdAt);
+        save(); renderAll(); toast("导入成功,已合并去重");
+      }else{ toast("文件格式不对,导入失败"); }
+    }catch(err){ toast("文件解析失败"); }
+    e.target.value = "";
+  };
+  r.readAsText(f);
+});
+$("btn-clear").addEventListener("click", ()=>{
+  if(state.items.length === 0){ toast("已经是空的了"); return; }
+  if(confirm("清空全部记账数据?建议先导出备份。")){
+    state = defaults(); save(); exitEdit(); renderAll(); toast("已清空");
+  }
+});
+
+/* ---------------- 示例 ---------------- */
+function loadDemo(){
+  if(state.items.length > 0 && !confirm("会一笔一笔加入示例数据(不会覆盖已有的),继续吗?")) return;
+  const d = new Date(); const pad = n => String(n+1).padStart(2,"0"); // 下月同日
+  const nextDue = () => {
+    const t = new Date(Date.now() + 86400000*9);
+    return `${t.getFullYear()}-${pad(t.getMonth())}-${pad(t.getDate()-1)}`;
+  };
+  const demo = [
+    {name:"视频网站会员", cat:"vip", amount:25, cycle:"month", due:""},
+    {name:"手机话费", cat:"comm", amount:59, cycle:"month", due:nextDue()},
+    {name:"健身房年卡", cat:"other", amount:2400, cycle:"year", due:""},
+    {name:"家庭宽带", cat:"comm", amount:720, cycle:"year", due:""},
+    {name:"水电燃气预缴", cat:"util", amount:260, cycle:"month", due:""},
+  ];
+  if(state.items.length === 0){ // 租房类只在空账本时给,避免重复
+    demo.unshift({name:"房租", cat:"rent", amount:2800, cycle:"month", due:""});
+  }
+  demo.forEach(x => state.items.push({id:"d"+Date.now().toString(36)+Math.random().toString(36).slice(2,6), ...x, paused:false, createdAt:Date.now()}));
+  save(); renderAll(); toast("示例已加入,数字开始跳了");
+}
+$("btn-demo").addEventListener("click", loadDemo);
+
+/* ---------------- 杂项 ---------------- */
+let toastTimer;
+function toast(msg){
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+function renderAll(){ renderMeter(); renderList(); renderCats(); }
+
+/* 每天跨过零点时自动刷新“今天”与累计 */
+function scheduleMidnight(){
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 0, 0, 30);
+  setTimeout(()=>{ renderAll(); scheduleMidnight(); }, next - now);
+}
+
+fillCatSelect();
+renderAll();
+scheduleMidnight();
+</script>
+</body>
+</html>

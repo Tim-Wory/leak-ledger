@@ -1,0 +1,1978 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>漏钱账本 v3 · 每天多少钱悄悄溜走</title>
+<style>
+/* ============ v3.1 设计系统 · 对账单 / Receipt ============
+   单一强调色(朱红)+ 石墨数据色 + 论文纸底 + 实线/虚线规线。
+   圆角统一为 0(账本感),层级靠字重、字号与留白,不靠阴影。 */
+:root{
+  --paper:#f2f2ee;
+  --panel:#fbfbf9;
+  --panel-2:#f7f7f4;
+  --ink:#161a19;
+  --ink-2:#4d5451;
+  --ink-3:#6b726c;
+  --hair:#e3e4df;
+  --hair-2:#c9ccc5;
+  --accent:#b8452f;
+  --accent-soft:#f6e8e3;
+  --accent-ink:#8c3323;
+  --graphite:#414b47;
+  --ok:#3f6b4f;
+  --r:0px;
+  --maxw:1180px;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --ease:cubic-bezier(.16,1,.3,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--paper);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Segoe UI",sans-serif;
+  font-size:14.5px;line-height:1.72;min-height:100dvh;
+  -webkit-font-smoothing:antialiased;
+}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"tnum";letter-spacing:-.01em}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px 104px}
+
+/* 极轻颗粒:只作用于固定层,避免滚动重绘 */
+body::after{
+  content:"";position:fixed;inset:0;z-index:2;pointer-events:none;opacity:.035;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.scroll-bar{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0;z-index:70}
+@supports (animation-timeline: scroll()){
+  .scroll-bar{width:100%;transform-origin:0 50%;transform:scaleX(0);animation:growX linear both;animation-timeline:scroll(root block)}
+}
+@keyframes growX{to{transform:scaleX(1)}}
+
+/* ---------- 顶栏 ---------- */
+.top{
+  display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;
+  padding:22px 0;border-bottom:1px solid var(--ink);
+}
+.brand{display:flex;align-items:center;gap:14px;min-width:0}
+.brand .mark{
+  width:30px;height:30px;flex:none;display:grid;place-items:center;background:var(--ink);
+  color:var(--paper);font-size:15px;font-weight:600;line-height:1;
+}
+.brand h1{font-size:15px;font-weight:600;letter-spacing:.06em;line-height:1.1}
+.brand .tagline{
+  display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--ink-3);margin-top:3px;
+}
+.v-badge{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;color:var(--ink-3);
+  border:1px solid var(--hair-2);padding:1px 5px;align-self:flex-start;margin-top:2px;
+}
+.top-actions{display:flex;align-items:center;gap:2px;flex-wrap:wrap}
+.top-actions .btn{border-color:transparent;color:var(--ink-2)}
+.top-actions .btn:hover{border-color:var(--hair-2);color:var(--ink);background:var(--panel)}
+
+/* ---------- 按钮 ---------- */
+button{font:inherit;cursor:pointer;transition:background .2s var(--ease),color .2s var(--ease),border-color .2s var(--ease),transform .16s var(--ease)}
+button:active{transform:translateY(1px)}
+.btn{
+  border-radius:var(--r);padding:9px 16px;font-size:12.5px;font-weight:600;letter-spacing:.04em;
+  border:1px solid transparent;white-space:nowrap;background:transparent;
+}
+.btn-primary{background:var(--accent);color:#fff8f6;border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent-ink);border-color:var(--accent-ink)}
+.btn-ink{background:var(--ink);color:#f7f7f3;border-color:var(--ink)}
+.btn-ink:hover{background:var(--graphite);border-color:var(--graphite)}
+.btn-ghost{color:var(--ink-2);border-color:var(--hair-2)}
+.btn-ghost:hover{color:var(--ink);border-color:var(--ink-3)}
+.btn-danger{color:var(--accent-ink);border-color:#e4c8c0}
+.btn-danger:hover{background:var(--accent-soft)}
+.btn-ok{color:var(--ok);border-color:#cbdcd2}
+.btn-ok:hover{background:#eef5f0}
+.btn:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn-sm{padding:5px 9px;font-size:11.5px}
+.sr-file{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;clip-path:inset(50%);left:-9999px}
+
+/* ---------- HERO:12 栏不对称 ---------- */
+.hero{
+  position:relative;border-bottom:1px solid var(--ink);
+  padding:38px 0 0;
+  display:grid;grid-template-columns:repeat(12,1fr);gap:0 28px;
+}
+.hero::before{ /* 账本竖线:只画在 Hero 背景,不参与滚动重绘 */
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(to right,var(--hair) 1px,transparent 1px);
+  background-size:calc(100%/12) 100%;opacity:.4;
+}
+.hero > *{position:relative}
+.hero-eyebrow{
+  grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;gap:16px;
+  font-family:var(--mono);font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--ink-3);
+  padding-bottom:14px;border-bottom:1px solid var(--hair);margin-bottom:34px;
+}
+.hero-left{grid-column:1/span 7;padding-bottom:34px;min-width:0}
+.hero-figure{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.hero-figure .cur{font-size:clamp(22px,2.6vw,30px);color:var(--ink-3);line-height:1;padding-bottom:.18em}
+.hero-figure .val{
+  font-size:clamp(56px,10.4vw,116px);font-weight:500;line-height:.82;letter-spacing:-.055em;color:var(--ink);
+  animation:figureIn .9s var(--ease) both;
+}
+.hero-figure .val em{font-style:normal;color:var(--accent)}
+.hero-figure .unit{
+  font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--ink-3);padding-bottom:.9em;
+}
+@keyframes figureIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.hero-caption{
+  display:flex;align-items:baseline;gap:12px;margin-top:16px;
+  font-size:12px;color:var(--ink-3);letter-spacing:.02em;
+}
+.hero-caption .ln{flex:none;width:44px;height:1px;background:var(--accent);transform:translateY(-4px)}
+.hero-caption b{color:var(--accent-ink);font-weight:600}
+.equiv{margin-top:18px;font-size:13.5px;color:var(--ink-2);max-width:56ch;line-height:1.85}
+.equiv b{color:var(--ink);font-weight:600}
+
+/* 日环:今天已经流走多少 */
+.hero-right{
+  grid-column:9/span 4;padding:6px 0 34px;margin-top:38px;border-left:1px solid var(--hair-2);
+  padding-left:28px;display:flex;flex-direction:column;gap:0;
+}
+.ring-label{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-3)}
+.dayring{position:relative;width:158px;margin:16px 0 14px}
+.dayring svg{display:block;width:100%;height:auto;overflow:visible}
+.dayring .ring-track{fill:none;stroke:var(--hair);stroke-width:3}
+.dayring .ring-fill{fill:none;stroke:var(--accent);stroke-width:3;stroke-linecap:butt;transform:rotate(-90deg);transform-origin:80px 80px;transition:stroke-dashoffset 1.2s var(--ease)}
+.dayring .ring-head{fill:var(--accent)}
+.dayring-center{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+}
+.dayring-center .amt{font-family:var(--mono);font-size:19px;font-weight:600;letter-spacing:-.02em;color:var(--accent)}
+.dayring-center .cap{font-family:var(--mono);font-size:8.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.ring-foot{font-size:12px;color:var(--ink-2)}
+.ring-foot b{font-family:var(--mono);color:var(--ink);font-weight:600}
+
+/* 固定支出流:每根刻度 = 一笔按期扣款 */
+.streak{
+  grid-column:1/-1;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);
+  overflow:hidden;padding:13px 0;position:relative;
+}
+.streak::before,.streak::after{
+  content:"";position:absolute;top:0;bottom:0;width:56px;z-index:2;pointer-events:none;
+}
+.streak::before{left:0;background:linear-gradient(90deg,var(--paper),rgba(242,242,238,0))}
+.streak::after{right:0;background:linear-gradient(270deg,var(--paper),rgba(242,242,238,0))}
+.streak-track{display:flex;gap:0;width:max-content;animation:drift 48s linear infinite}
+.streak-track .streak-item{flex:none}
+.streak:hover .streak-track{animation-play-state:paused}
+@keyframes drift{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.streak-item{
+  display:flex;align-items:center;gap:9px;padding:0 26px;border-right:1px solid var(--hair-2);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap;
+}
+.streak-item .tick{display:flex;align-items:flex-end;gap:2px;height:12px}
+.streak-item .tick i{display:block;width:2px;background:var(--accent);height:100%;opacity:.5}
+.streak-item b{color:var(--ink-2);font-weight:600}
+.streak-empty{padding:0 4px;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+
+/* 微观事实条 */
+.micro-facts{
+  grid-column:1/-1;display:grid;grid-template-columns:repeat(3,1fr);
+}
+.mf{padding:22px 24px;border-right:1px solid var(--hair);min-width:0}
+.mf:last-child{border-right:none}
+.mf .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3);margin-bottom:7px}
+.mf .v{font-family:var(--mono);font-size:clamp(18px,2.4vw,25px);font-weight:600;letter-spacing:-.02em;line-height:1.2}
+.mf .v small{font-size:11px;font-weight:400;color:var(--ink-3);letter-spacing:0}
+.mf .hint{font-size:11.5px;color:var(--ink-3);margin-top:3px}
+
+/* ---------- 区块骨架 ---------- */
+section{margin-top:0;position:relative}
+.block{padding:54px 0 0}
+.block + .block{border-top:1px solid var(--hair);margin-top:54px}
+.sec-head{
+  display:flex;align-items:baseline;justify-content:space-between;gap:18px;flex-wrap:wrap;
+  margin-bottom:26px;
+}
+.sec-head h2{
+  font-size:13px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  display:flex;align-items:center;gap:10px;
+}
+.sec-head h2::before{content:"";width:7px;height:7px;background:var(--accent);flex:none;transform:translateY(-1px)}
+.sec-head .sub{font-size:12px;color:var(--ink-3);max-width:52ch}
+.panel{background:var(--panel);border:1px solid var(--hair);padding:26px}
+
+/* 入场编排 */
+.reveal{opacity:1}
+@media (prefers-reduced-motion:no-preference){
+  .reveal{opacity:0;transform:translateY(12px)}
+  .reveal.in{opacity:1;transform:none;transition:opacity .6s var(--ease),transform .6s var(--ease);transition-delay:calc(var(--i,0) * 55ms)}
+}
+
+/* ---------- 运势:不对称三分 ---------- */
+.fortune{
+  display:grid;grid-template-columns:210px minmax(0,1fr) minmax(0,.86fr);gap:36px;
+  padding:8px 0 0;align-items:start;
+}
+.f-left{text-align:left}
+.sun{width:150px;height:150px}
+.sun .rays{transform-origin:60px 60px;animation:slowSpin 60s linear infinite}
+.sun .core{animation:softPulse 6s ease-in-out infinite}
+@keyframes slowSpin{to{transform:rotate(360deg)}}
+@keyframes softPulse{0%,100%{opacity:1}50%{opacity:.45}}
+.f-sign{font-size:17px;font-weight:600;margin-top:10px;letter-spacing:.04em}
+.f-range{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);letter-spacing:.06em}
+.f-mid{border-left:1px solid var(--hair);padding-left:32px;min-width:0}
+.f-score{display:flex;align-items:baseline;gap:14px;margin-bottom:22px}
+.f-score .bignum{font-family:var(--mono);font-size:clamp(46px,6vw,64px);font-weight:500;line-height:.9;letter-spacing:-.06em;color:var(--accent)}
+.f-score .cap{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3)}
+.f-bars{display:flex;flex-direction:column;gap:12px}
+.f-bar{display:grid;grid-template-columns:3.6em 1fr 2.2em;gap:14px;align-items:center;font-size:12px}
+.f-bar .fb-name{color:var(--ink-2);letter-spacing:.04em}
+.f-bar .fb-track{height:2px;background:var(--hair);position:relative;overflow:hidden}
+.f-bar .fb-fill{display:block;height:100%;width:0;background:var(--graphite);transition:width 1.1s var(--ease)}
+.f-bar .fb-fill.money{background:var(--accent)}
+.f-bar .fb-val{text-align:right;font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+.f-right{border-left:1px solid var(--hair);padding-left:32px;min-width:0}
+.f-row{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}
+.f-row label{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3)}
+.f-meta{font-size:11.5px;color:var(--ink-3);line-height:1.9;margin-bottom:16px;font-family:var(--mono)}
+.f-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px}
+.f-chip{
+  font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--ink-2);
+  border:1px solid var(--hair-2);padding:3px 8px;display:inline-flex;align-items:center;gap:6px;
+}
+.f-chip .swatch{width:8px;height:8px;border:1px solid rgba(0,0,0,.14)}
+.f-yj{font-size:12px;color:var(--ink-2);display:flex;flex-direction:column;gap:6px;line-height:1.75}
+.f-yj b{font-weight:600;color:var(--accent-ink);letter-spacing:.08em;margin-right:6px}
+.f-read{
+  margin-top:34px;padding:22px 26px;border-left:2px solid var(--accent);
+  background:var(--panel);font-size:12.5px;color:var(--ink-2);line-height:1.95;
+}
+.f-read h4{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink);margin-bottom:10px}
+.f-note{margin-top:12px;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:var(--ink-3)}
+
+/* ---------- 月度:大数字 + 幽灵月份 ---------- */
+.msum{
+  display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
+  border-top:1px solid var(--ink);padding-top:26px;gap:40px;position:relative;
+}
+.msum-ghost{
+  position:absolute;right:0;top:-6px;font-family:var(--mono);font-size:clamp(96px,15vw,168px);
+  font-weight:500;line-height:.8;letter-spacing:-.07em;color:var(--ink);opacity:.045;
+  pointer-events:none;user-select:none;
+}
+.mnav{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.m-title{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase}
+.mnav button[aria-label]{
+  width:24px;height:24px;display:grid;place-items:center;font-size:9px;color:var(--ink-2);
+  border:1px solid var(--hair-2);background:transparent;line-height:1;
+}
+.mnav button[aria-label]:hover{border-color:var(--ink);color:var(--ink)}
+.mnav .back-today{margin-left:auto}
+.m-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3)}
+.big-month{display:flex;align-items:baseline;gap:10px;margin:14px 0 22px;flex-wrap:wrap}
+.big-month .cur{font-size:20px;color:var(--ink-3)}
+.big-month .val{font-size:clamp(40px,6.4vw,66px);font-weight:500;letter-spacing:-.05em;line-height:.9}
+.split-legend{display:flex;flex-direction:column;gap:11px;max-width:420px}
+.split-row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;font-size:12.5px}
+.split-row .dot{width:7px;height:7px;flex:none}
+.dot-fixed{background:var(--accent)}
+.dot-flow{background:var(--graphite)}
+.split-row .s-name{color:var(--ink-2);letter-spacing:.02em}
+.split-row .s-amt{font-family:var(--mono);font-weight:600;white-space:nowrap}
+.split-back{height:1px;background:var(--hair-2);display:flex;overflow:hidden;min-width:120px;margin-top:4px}
+.split-back i{display:block;height:100%;transition:width .9s var(--ease)}
+.msum .note{margin-top:20px;font-size:11px;color:var(--ink-3);line-height:1.8;max-width:44ch}
+.msum-right{min-width:0;padding-left:40px;border-left:1px solid var(--hair)}
+.msum-right .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink-3)}
+.donut-wrap{display:flex;align-items:center;gap:20px;margin-top:16px}
+.donut{width:96px;flex:none}
+.donut svg{display:block;width:100%;height:auto}
+.donut-legend{display:flex;flex-direction:column;gap:7px}
+.donut-legend .dl{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-2)}
+.donut-legend .dl .dot{width:7px;height:7px;flex:none}
+.donut-legend .dl b{color:var(--ink);font-weight:600;font-family:var(--mono)}
+.msum-right .sub{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3);margin:24px 0 10px}
+.top-cats{display:flex;flex-direction:column}
+.top-cats .tc{
+  display:flex;justify-content:space-between;gap:14px;font-size:12px;color:var(--ink-2);
+  padding:8px 0;border-bottom:1px dotted var(--hair-2);
+}
+.top-cats .tc:last-child{border-bottom:none}
+.top-cats .tc b{color:var(--ink);font-family:var(--mono);font-weight:600}
+
+/* ---------- 图表 ---------- */
+.charts-grid{display:grid;grid-template-columns:minmax(0,1.62fr) minmax(0,1fr);gap:0 40px}
+.chart-box{min-width:0;border-top:1px solid var(--ink);padding-top:18px}
+.chart-box:first-child{border-top:none;padding-top:0}
+.chart-box h3{font-size:11.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.chart-box .c-sub{font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--ink-3);margin:5px 0 18px}
+.chart-box svg{width:100%;height:auto;display:block;overflow:visible}
+.chart-empty{border:1px dashed var(--hair-2);padding:48px 18px;text-align:center;color:var(--ink-3);font-size:12px}
+.cb-bar{transform-box:fill-box;transform-origin:50% 100%;animation:barGrow .8s var(--ease) both}
+.cb-bar.neg{transform-origin:50% 0}
+@keyframes barGrow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.cb-line{animation:lineDraw 1.15s var(--ease) .2s both}
+@keyframes lineDraw{to{stroke-dashoffset:0}}
+.cb-dot{animation:softPulse 2.8s ease-in-out 1.1s infinite}
+.cb-area{animation:fadeIn .9s ease .3s both}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+/* ---------- 表单:紧凑指令条 ---------- */
+.form-grid,.quick{display:grid;grid-template-columns:repeat(12,1fr);gap:18px 18px}
+.field{display:flex;flex-direction:column;gap:7px;min-width:0}
+.field.span-2{grid-column:span 2}
+.field.span-3{grid-column:span 3}
+.field.span-4{grid-column:span 4}
+.field.span-5{grid-column:span 5}
+.field.span-6{grid-column:span 6}
+.field.span-12{grid-column:span 12}
+label{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-3)}
+label .opt{font-family:inherit;text-transform:none;letter-spacing:0;font-size:10px}
+input,select{
+  font:inherit;font-size:13.5px;color:var(--ink);background:var(--panel);
+  border:1px solid var(--hair-2);border-radius:var(--r);padding:11px 12px;width:100%;
+  transition:border-color .2s var(--ease),box-shadow .2s var(--ease),background .2s var(--ease);
+}
+input::placeholder{color:#a6ada6}
+input:hover,select:hover{border-color:var(--ink-3)}
+input:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(184,69,47,.1);background:#fff}
+select{
+  appearance:none;-webkit-appearance:none;padding-right:30px;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' fill='none' stroke='%234d5451' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 11px center;
+}
+#f-flow-amt{font-family:var(--mono);font-size:18px;font-weight:500}
+.form-foot{display:flex;align-items:center;gap:14px;margin-top:22px;flex-wrap:wrap}
+.form-foot .spacer{flex:1}
+.form-error{color:var(--accent-ink);font-size:11.5px;font-weight:600}
+.editing-note{font-size:11.5px;color:var(--ink-2)}
+.editing-note b{color:var(--accent-ink)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{
+  border:1px solid var(--hair-2);background:var(--panel);color:var(--ink-2);
+  border-radius:var(--r);padding:7px 13px;font-size:12px;letter-spacing:.02em;
+  transition:background .2s var(--ease),color .2s var(--ease),border-color .2s var(--ease);
+}
+.chip:hover{border-color:var(--ink-2);color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#f7f7f3}
+.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- 固定清单:收据行 ---------- */
+.fixed-head{
+  display:grid;grid-template-columns:34px minmax(0,1fr) 96px 104px 150px;gap:14px;
+  padding:0 0 10px;border-bottom:1px solid var(--ink);
+  font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);
+}
+.fixed-head span:nth-child(4),.fixed-head span:nth-child(5){text-align:right}
+.item{
+  display:grid;grid-template-columns:34px minmax(0,1fr) 96px 104px 150px;gap:14px;
+  align-items:center;padding:15px 0;border-bottom:1px dotted var(--hair-2);
+  transition:background .2s var(--ease);
+}
+.item:hover{background:var(--panel)}
+.item.paused{opacity:.5}
+.item.paused .name{text-decoration:line-through;text-decoration-thickness:1px}
+.item-idx{font-family:var(--mono);font-size:10px;color:var(--ink-3);letter-spacing:.04em}
+.item-main{min-width:0}
+.name{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;font-size:13.5px;font-weight:500;letter-spacing:.01em}
+.name .lead{
+  flex:1 1 24px;min-width:18px;height:1em;border-bottom:1px dotted var(--hair-2);
+  transform:translateY(-4px);
+}
+.cat-chip{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;color:var(--ink-3);
+  border:1px solid var(--hair);padding:0 5px;white-space:nowrap;text-transform:uppercase;
+}
+.cat-chip.acc{color:var(--accent-ink);border-color:#e6ccc4}
+.due{font-family:var(--mono);font-size:9.5px;color:var(--ink-3);letter-spacing:.04em}
+.due.warn{color:var(--accent-ink)}
+.amounts{display:flex;flex-direction:column;align-items:flex-end;gap:1px;justify-self:end}
+.amounts .d{font-family:var(--mono);font-size:13px;font-weight:600}
+.amounts .d .per{font-family:inherit;font-size:9.5px;font-weight:400;color:var(--ink-3);margin-left:1px}
+.amounts .m{font-family:var(--mono);font-size:9.5px;color:var(--ink-3)}
+.item-actions{display:flex;gap:2px;justify-content:flex-end}
+.item-actions .btn{border-color:transparent;color:var(--ink-3);padding:4px 8px;font-size:11px}
+.item-actions .btn:hover{border-color:var(--hair-2);color:var(--ink);background:transparent}
+.item-rank{
+  grid-column:2/-1;height:1px;background:var(--hair);margin-top:2px;position:relative;
+}
+.item-rank i{position:absolute;inset:0 auto 0 0;background:var(--accent);opacity:.55;width:0;transition:width .8s var(--ease)}
+
+/* ---------- 流水 ---------- */
+.flow-date{
+  display:flex;align-items:baseline;gap:12px;margin:26px 0 8px;
+  padding-bottom:7px;border-bottom:1px solid var(--ink);
+}
+.flow-date:first-child{margin-top:0}
+.fd-label{font-size:12.5px;font-weight:600;letter-spacing:.04em}
+.flow-date .wd{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
+.day-sum{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+.flow-row{
+  display:grid;grid-template-columns:104px minmax(0,1fr) 62px 92px 30px;gap:14px;align-items:center;
+  padding:11px 0;border-bottom:1px dotted var(--hair-2);transition:background .2s var(--ease);
+}
+.flow-row:hover{background:var(--panel)}
+.flow-row .cat-chip{justify-self:start}
+.flow-row .note{font-size:12.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.flow-row .note.none{color:#a9b0a9}
+.flow-row .f-time{font-family:var(--mono);font-size:10px;color:var(--ink-3);text-align:right}
+.flow-row .f-amt{font-family:var(--mono);font-size:12.5px;font-weight:600;text-align:right;white-space:nowrap}
+.flow-row .f-amt.neg{color:var(--ok)}
+.flow-row .del{
+  background:transparent;border:none;color:#b6bdb6;font-size:13px;line-height:1;padding:2px;
+  justify-self:end;
+}
+.flow-row .del:hover{color:var(--accent)}
+
+/* ---------- 空态 / 页脚 ---------- */
+.empty{
+  padding:52px 20px;text-align:center;border:1px dashed var(--hair-2);
+  color:var(--ink-3);font-size:12px;line-height:1.9;
+}
+.empty .big{
+  font-family:var(--mono);font-size:10px;letter-spacing:.28em;text-transform:uppercase;
+  color:var(--ink-3);display:block;margin-bottom:14px;
+}
+.empty .big::before,.empty .big::after{
+  content:"";display:inline-block;width:26px;height:1px;background:var(--hair-2);vertical-align:middle;margin:0 10px;
+}
+.footnote{
+  margin-top:60px;border-top:1px solid var(--ink);padding-top:20px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;color:var(--ink-3);
+  display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap;align-items:center;line-height:1.9;
+}
+
+/* ---------- 弹窗 / toast ---------- */
+.modal-mask{
+  position:fixed;inset:0;background:rgba(22,26,25,.5);display:none;align-items:center;justify-content:center;
+  padding:20px;z-index:90;
+}
+.modal-mask.open{display:flex}
+.modal{background:var(--panel);border:1px solid var(--ink);padding:28px;max-width:430px;width:100%}
+.modal h3{font-size:13px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px;font-weight:600}
+.modal p{color:var(--ink-2);font-size:12.5px;margin-bottom:24px;line-height:1.8}
+.modal .row{display:flex;gap:8px;justify-content:flex-end}
+#toast{
+  position:fixed;left:50%;bottom:32px;transform:translate(-50%,12px);
+  background:var(--ink);color:#f7f7f3;padding:10px 18px;
+  font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+  opacity:0;pointer-events:none;transition:opacity .24s var(--ease),transform .24s var(--ease);z-index:100;white-space:nowrap;
+}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+.mp-track{display:block;height:2px;background:var(--hair);margin-top:14px;position:relative;overflow:hidden}
+.mp-track i{position:absolute;inset:0 auto 0 0;width:0;background:var(--accent);transition:width 1s var(--ease)}
+.item > .cat-chip{justify-self:start}
+
+/* ---------- 分类流失:收据式 ---------- */
+.cat-block{margin-bottom:24px}
+.cat-block:last-child{margin-bottom:0}
+.cat-row{display:flex;align-items:baseline;gap:14px;font-size:13px}
+.cat-row .c-name{display:flex;align-items:baseline;gap:10px;flex:1;min-width:0;font-weight:500}
+.cat-row .c-name .lead{flex:1;min-width:20px;height:1em;border-bottom:1px dotted var(--hair-2);transform:translateY(-4px)}
+.cat-row .c-amounts{font-family:var(--mono);color:var(--ink-2);white-space:nowrap}
+.cat-row .c-amounts b{color:var(--ink);font-weight:600}
+.cat-row .c-amounts .per{color:var(--ink-3);font-size:10px}
+.cat-row .c-pct{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);width:3.4em;text-align:right}
+.cat-bar{height:1px;background:var(--hair);margin-top:10px;position:relative;overflow:hidden}
+.cat-bar i{position:absolute;inset:0 auto 0 0;background:var(--accent);opacity:.6}
+
+/* ---------- 响应式:768 以下强制单列 ---------- */
+@media (max-width:1024px){
+  .hero-left{grid-column:1/span 7}
+  .hero-right{grid-column:9/span 4}
+  .fortune{grid-template-columns:170px minmax(0,1fr);gap:28px}
+  .f-right{grid-column:1/-1;border-left:none;padding-left:0;border-top:1px solid var(--hair);padding-top:20px;
+    display:grid;grid-template-columns:200px minmax(0,1fr);gap:4px 28px;align-items:start}
+  .f-right .f-row{grid-column:1}
+  .f-right .f-meta{grid-column:1}
+  .f-right .f-chips{grid-column:2;grid-row:1/span 2;margin-bottom:0}
+  .f-right .f-yj{grid-column:2;grid-row:3}
+  .msum{grid-template-columns:1fr;gap:28px}
+  .msum-right{border-left:none;padding-left:0;border-top:1px solid var(--hair);padding-top:24px}
+  .fixed-head,.item{grid-template-columns:30px minmax(0,1fr) 100px 132px}
+  .fixed-head span:nth-child(3){display:none}
+  .item > .cat-chip{display:none}          /* 周期列让位给金额 */
+  .item .amounts .m{display:none}
+  .charts-grid{grid-template-columns:1fr;gap:34px}
+  .chart-box:nth-child(2){border-top:1px solid var(--ink);padding-top:18px}
+}
+@media (max-width:768px){
+  .wrap{padding:0 16px 76px}
+  .hero{display:block;padding-top:22px}
+  .hero::before{display:none}
+  .hero-eyebrow{margin-bottom:22px}
+  .hero-left{padding-bottom:26px}
+  .hero-right{
+    border-left:none;padding-left:0;margin-top:0;padding-top:24px;padding-bottom:26px;
+    border-top:1px solid var(--hair);display:grid;grid-template-columns:132px minmax(0,1fr);gap:0 20px;align-items:center;
+  }
+  .hero-right .ring-label{grid-column:1/-1;grid-row:1}
+  .dayring{grid-column:1;grid-row:2/span 2;width:120px;margin:10px 0 0}
+  .hero-right .ring-foot{grid-column:2;grid-row:2;align-self:start;padding-top:10px}
+  .hero-right .mp-track{grid-column:2;grid-row:3;align-self:start;margin-top:10px}
+  .hero-right .ring-foot-2{grid-column:1/-1;grid-row:4;padding-top:14px}
+  .micro-facts{grid-template-columns:1fr;border-bottom:1px solid var(--ink)}
+  .mf{border-right:none;border-bottom:1px solid var(--hair);padding:16px 0}
+  .mf:last-child{border-bottom:none}
+  .block{padding-top:38px}
+  .block + .block{margin-top:38px}
+  .fortune{grid-template-columns:1fr;gap:24px}
+  .f-mid,.f-right{border-left:none;padding-left:0;border-top:1px solid var(--hair);padding-top:20px}
+  .f-right{display:block}
+  .field.span-2,.field.span-3,.field.span-4,.field.span-5,.field.span-6{grid-column:span 6}
+  .field.span-12{grid-column:span 12}
+  .form-grid,.quick{gap:14px}
+  .fixed-head{display:none}
+  .item{grid-template-columns:26px minmax(0,1fr) auto;gap:10px;padding:14px 0}
+  .item .amounts{grid-column:2;align-items:flex-start;justify-self:start;flex-direction:row;gap:10px}
+  .item .amounts .m{display:inline}
+  .item-actions{grid-column:3;grid-row:1}
+  .item-rank{grid-column:2/-1;margin-top:8px}
+  .flow-row{grid-template-columns:88px minmax(0,1fr) 74px 26px;gap:10px}
+  .flow-row .f-time{display:none}
+  .msum-ghost{font-size:120px;top:auto;bottom:0}
+  .f-read{padding:18px}
+  .top{gap:12px}
+  .top-actions{width:100%;justify-content:flex-start}
+}
+@media (max-width:420px){
+  .hero-figure .val{letter-spacing:-.06em}
+  .flow-row{grid-template-columns:1fr 70px 24px}
+  .flow-row .cat-chip{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+  .reveal{opacity:1!important;transform:none!important}
+}
+
+</style>
+</head>
+<body>
+<div class="scroll-bar" id="scroll-bar" aria-hidden="true"></div>
+<div class="wrap">
+
+  <header class="top">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">漏</span>
+      <div>
+        <h1>漏钱账本</h1>
+        <span class="tagline">Daily Leak Ledger</span>
+      </div>
+      <span class="v-badge">v3.1</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn btn-ghost btn-sm" id="btn-demo" type="button">填入示例</button>
+      <button class="btn btn-ghost btn-sm" id="btn-export" type="button">导出备份</button>
+      <button class="btn btn-ghost btn-sm" id="btn-import" type="button">导入备份</button>
+      <input type="file" id="file-import" accept="application/json,.json" class="sr-file">
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-eyebrow" id="hero-title">
+      <span>今日固定流失 · Daily leak</span>
+      <span>Receipt <b class="num" id="hero-date">----.--.--</b></span>
+    </div>
+
+    <div class="hero-left">
+      <div class="hero-figure">
+        <span class="cur">¥</span><span class="val num" id="daily">0.00</span><span class="unit">/ 天</span>
+      </div>
+      <div class="hero-caption"><span class="ln"></span><span>固定开支按周期折算,<b>每天</b> 都在发生</span></div>
+      <p class="equiv" id="equiv">把每一笔固定开支都换算成“每天流走多少”,再相加。日常流水在下方月度汇总里。</p>
+    </div>
+
+    <aside class="hero-right">
+      <span class="ring-label">今天已悄悄流走</span>
+      <div class="dayring">
+        <svg viewBox="0 0 160 160" role="img" aria-labelledby="dayring-svg-title">
+          <title id="dayring-svg-title">今日时间进度与按日均摊的流失估算</title>
+          <circle class="ring-track" cx="80" cy="80" r="70"/>
+          <circle class="ring-fill" id="day-ring-progress" cx="80" cy="80" r="70"
+                  stroke-dasharray="439.82" stroke-dashoffset="439.82"/>
+          <circle class="ring-head" id="day-ring-head" cx="80" cy="10" r="3.2"/>
+        </svg>
+        <div class="dayring-center">
+          <span class="amt num" id="day-ring-amount">¥0.00</span>
+          <span class="cap">已流走</span>
+        </div>
+      </div>
+      <div class="ring-foot">距今天结束还有 <b id="day-ring-left">--</b></div>
+      <span class="mp-track" aria-hidden="true"><i id="m-progress-bar"></i></span>
+      <div class="ring-foot ring-foot-2" style="margin-top:10px">本月已过 <b id="m-progress-pct">0%</b> · 预计月底 <b id="proj-amount">¥0.00</b></div>
+    </aside>
+
+    <!-- 固定支出流:每根刻度 = 一笔按期扣款 -->
+    <div class="streak" aria-hidden="true">
+      <div class="streak-track" id="streak-track"></div>
+    </div>
+
+    <div class="micro-facts">
+      <div class="mf">
+        <div class="k">固定折合每月 / 每年</div>
+        <div class="v num" id="per-month">¥0.00 <small>/ 月</small></div>
+        <div class="hint num" id="per-year">约 ¥0.00 / 年</div>
+      </div>
+      <div class="mf">
+        <div class="k">开始记账以来</div>
+        <div class="v num" id="drained">¥0.00</div>
+        <div class="hint num" id="drained-days">坚持第 1 天</div>
+      </div>
+      <div class="mf">
+        <div class="k">在流动的开支</div>
+        <div class="v num" id="active-count">0 笔</div>
+        <div class="hint" id="paused-hint">暂停的会停表,但不会忘记</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 今日运势 -->
+  <section class="block">
+    <div class="sec-head">
+      <h2>今日运势</h2>
+      <span class="sub">娱乐向参考,当生活调味剂就好,别拿它替你做人生决定</span>
+    </div>
+    <div class="fortune">
+      <div class="f-left">
+        <svg class="sun" viewBox="0 0 120 120" aria-hidden="true">
+          <g class="rays">
+            <g stroke="var(--accent)" stroke-width="2" stroke-linecap="round" opacity=".72">
+              <line x1="60" y1="16" x2="60" y2="27"/><line x1="60" y1="93" x2="60" y2="104"/>
+              <line x1="16" y1="60" x2="27" y2="60"/><line x1="93" y1="60" x2="104" y2="60"/>
+              <line x1="29" y1="29" x2="37" y2="37"/><line x1="83" y1="83" x2="91" y2="91"/>
+              <line x1="91" y1="29" x2="83" y2="37"/><line x1="37" y1="83" x2="29" y2="91"/>
+            </g>
+            <g stroke="var(--accent)" stroke-width="1.4" stroke-linecap="round" opacity=".38">
+              <line x1="60" y1="8" x2="60" y2="12"/><line x1="112" y1="60" x2="108" y2="60"/>
+              <line x1="60" y1="112" x2="60" y2="108"/><line x1="8" y1="60" x2="12" y2="60"/>
+            </g>
+          </g>
+          <circle class="core" cx="60" cy="60" r="21" fill="none" stroke="var(--accent)" stroke-width="2.2" opacity=".65"/>
+          <circle cx="60" cy="60" r="15" fill="var(--accent-soft)"/>
+          <text x="60" y="64" text-anchor="middle" font-size="9" font-weight="600" letter-spacing="2" fill="var(--accent-ink)">LEO</text>
+        </svg>
+        <div class="f-sign" id="f-sign">狮子座</div>
+        <div class="f-range num" id="f-range">7月23日 - 8月22日</div>
+      </div>
+
+      <div class="f-mid">
+        <div class="f-score">
+          <div><span class="bignum num" id="f-total">0</span><span class="cap">今日综合</span></div>
+        </div>
+        <div class="f-bars num" id="f-bars"></div>
+      </div>
+
+      <div class="f-right">
+        <div class="f-row">
+          <label for="f-birth">出生日期(可改)</label>
+          <input type="date" id="f-birth" value="1998-07-24">
+        </div>
+        <div class="f-meta" id="f-meta"></div>
+        <div class="f-chips" id="f-lucky"></div>
+        <div class="f-yj" id="f-yj"></div>
+      </div>
+    </div>
+    <div class="f-read" id="f-read"></div>
+    <p class="f-note">运势由日期与生日做确定性推算(同一天刷新结果不变),纯属娱乐;真正决定账面的,还是你今天有没有记那一笔。</p>
+  </section>
+
+  <!-- 月度汇总 -->
+  <section class="block">
+    <div class="sec-head">
+      <h2>月度流失汇总</h2>
+      <span class="sub">固定开支按天折算 · 日常流水按实际支出</span>
+    </div>
+    <div class="msum">
+        <span class="msum-ghost num" id="m-ghost" aria-hidden="true">10</span>
+      <div>
+        <div class="mnav">
+          <button id="m-prev" type="button" aria-label="上一个月">◀</button>
+          <span class="m-title num" id="m-title">2026年10月</span>
+          <button id="m-next" type="button" aria-label="下一个月">▶</button>
+          <button class="btn btn-ghost btn-sm back-today" id="m-today" type="button">回到本月</button>
+        </div>
+        <div class="m-label">这个月流走</div>
+        <div class="big-month">
+          <span class="cur num">¥</span><span class="val num" id="m-total">0.00</span>
+        </div>
+        <div class="split-legend">
+          <div class="split-row">
+            <span class="dot dot-fixed"></span><span class="s-name">固定开支折算</span>
+            <span class="s-amt num" id="m-fixed">¥0.00</span>
+          </div>
+          <div class="split-row">
+            <span class="dot dot-flow"></span><span class="s-name">日常流水(实付)</span>
+            <span class="s-amt num" id="m-flow">¥0.00</span>
+          </div>
+          <div class="split-row">
+            <div class="split-back" aria-hidden="true" style="grid-column:1/-1"><i id="m-bar-fixed" style="background:var(--accent);width:50%"></i><i id="m-bar-flow" style="background:var(--blue);width:50%"></i></div>
+          </div>
+        </div>
+        <div class="note" id="m-note">固定开支是“按天折算”的预估,不是这个月的实付;流水才是真金白银划走的。</div>
+      </div>
+      <div class="msum-right">
+        <div class="k">构成占比</div>
+        <div class="donut-wrap">
+          <div class="donut" id="m-donut"></div>
+          <div class="donut-legend num" id="m-legend"></div>
+        </div>
+        <div class="sub">流水去向 TOP 5</div>
+        <div class="top-cats" id="top-cats"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 流水画像 -->
+  <section class="block">
+    <div class="sec-head">
+      <h2>流水画像</h2>
+      <span class="sub">每天记了多少、月内累计到多少;冲销会把曲线往下拽</span>
+    </div>
+    <div class="charts-grid">
+      <div class="chart-box">
+        <h3>逐日支出 &amp; 累计曲线</h3>
+        <div class="c-sub num" id="chart-combo-sub"></div>
+        <div id="chart-combo"></div>
+      </div>
+      <div class="chart-box">
+        <h3>星期节奏</h3>
+        <div class="c-sub num" id="chart-week-sub"></div>
+        <div id="chart-week"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 随手记一笔 -->
+  <section class="block">
+    <div class="sec-head">
+      <h2>随手记一笔</h2>
+      <span class="sub">吃饭、奶茶、打车,三秒记完;记错了就再记一笔负数</span>
+    </div>
+    <div class="panel">
+      <form id="flow-form" novalidate>
+        <div class="quick">
+          <div class="field span-3">
+            <label for="f-flow-amt">金额</label>
+            <input id="f-flow-amt" type="number" inputmode="decimal" step="0.01" placeholder="如 15.5" autocomplete="off">
+          </div>
+          <div class="field span-4">
+            <label for="f-flow-date">日期 <span class="opt">(默认今天)</span></label>
+            <input id="f-flow-date" type="date">
+          </div>
+          <div class="field span-5">
+            <label for="f-flow-note">备注 <span class="opt">(可不填)</span></label>
+            <input id="f-flow-note" type="text" maxlength="40" placeholder="如:楼下咖啡、地铁月卡" autocomplete="off">
+          </div>
+          <div class="field span-12">
+            <label id="flow-cats-label">分类</label>
+            <div class="chips" id="flow-chips" role="group" aria-labelledby="flow-cats-label"></div>
+          </div>
+        </div>
+        <div class="form-foot">
+          <span class="form-error" id="flow-error" hidden></span>
+          <div class="spacer"></div>
+          <button class="btn btn-ink" type="submit">记下这笔</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- 流水清单 -->
+  <section class="block">
+    <div class="sec-head">
+      <h2>日常流水</h2>
+      <span class="sub" id="flow-sub">正在展示本月的记录</span>
+    </div>
+    <div id="flow-list"></div>
+  </section>
+
+  <!-- 固定开支 -->
+  <section class="block">
+    <div class="sec-head">
+      <h2>记一笔固定开支</h2>
+      <span class="sub">金额和扣费周期决定它每天流走多快</span>
+    </div>
+    <div class="panel">
+      <form id="form" novalidate>
+        <div class="form-grid">
+          <div class="field span-4">
+            <label for="f-name">名称 / 平台</label>
+            <input id="f-name" type="text" placeholder="如:视频网站会员、手机话费" maxlength="30" autocomplete="off">
+          </div>
+          <div class="field span-3">
+            <label for="f-cat">类别</label>
+            <select id="f-cat"></select>
+          </div>
+          <div class="field span-3">
+            <label for="f-amount">金额</label>
+            <input id="f-amount" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="field span-2">
+            <label for="f-cycle">周期</label>
+            <select id="f-cycle">
+              <option value="month">每月</option>
+              <option value="quarter">每季</option>
+              <option value="year">每年</option>
+              <option value="once">单次</option>
+            </select>
+          </div>
+          <div class="field span-4">
+            <label for="f-date">下次扣费日 <span class="opt">(选填,用来倒计时)</span></label>
+            <input id="f-date" type="date">
+          </div>
+        </div>
+        <div class="form-foot">
+          <span class="editing-note" id="editing-note" hidden>正在编辑:<b id="editing-name"></b></span>
+          <span class="form-error" id="form-error" hidden></span>
+          <div class="spacer"></div>
+          <button class="btn btn-ghost" id="btn-cancel" type="button" hidden>取消</button>
+          <button class="btn btn-primary" id="btn-save" type="submit">添加</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- 固定清单 -->
+  <section class="block">
+    <div class="sec-head">
+      <h2>固定流失清单</h2>
+      <span class="sub">按“每天流走多少”从快到慢排序</span>
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <!-- 固定分类 -->
+  <section class="block">
+    <div class="sec-head">
+      <h2>固定开支从哪里漏</h2>
+      <span class="sub">各类别折算到每日的流失量</span>
+    </div>
+    <div class="panel" id="cats"></div>
+  </section>
+
+  <div class="footnote">
+    <span>数据只保存在这台电脑的浏览器里(localStorage),不联网、不上传。v3 沿用同一份账本数据,旧备份可直接导入。</span>
+    <button class="btn btn-danger btn-sm" id="btn-clear" type="button">清空全部数据</button>
+  </div>
+</div>
+
+<!-- 删除确认 -->
+<div class="modal-mask" id="confirm-mask">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <h3 id="confirm-title">删除这笔开支?</h3>
+    <p id="confirm-text">删除后无法恢复(除非有备份)。</p>
+    <div class="row">
+      <button class="btn btn-ghost" id="confirm-cancel" type="button">先不删</button>
+      <button class="btn btn-danger" id="confirm-ok" type="button">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" role="status"></div>
+
+<script>
+"use strict";
+
+/* ---------------- 存档(与 v1 同一 localStorage 键,自动迁移) ---------------- */
+const KEY = "leak-ledger-v1";
+const VERSION = 3;
+
+const CATS = [
+  {id:"vip",  label:"会员订阅"},
+  {id:"rent", label:"房租住房"},
+  {id:"comm", label:"话费网费"},
+  {id:"util", label:"水电燃气"},
+  {id:"other",label:"其他固定"}
+];
+const FLOW_CATS = [
+  {id:"food",   label:"吃饭餐饮"},
+  {id:"cafe",   label:"咖啡奶茶"},
+  {id:"move",   label:"出行通勤"},
+  {id:"shop",   label:"购物日用"},
+  {id:"fun",    label:"娱乐社交"},
+  {id:"fother", label:"其他消费"}
+];
+const FLOW_CAT_LABEL = Object.fromEntries(FLOW_CATS.map(c=>[c.id,c.label]));
+const CAT_LABEL = Object.fromEntries(CATS.map(c=>[c.id,c.label]));
+
+const CYCLE_LABEL = {month:"每月", quarter:"每季", year:"每年", once:"单次"};
+const DAYS = {month:30.4375, quarter:91.3125, year:365.25, once:0};
+
+/* ---------------- 小工具 ---------------- */
+const $ = id => document.getElementById(id);
+const pad2 = n => String(n).padStart(2,"0");
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; };
+function monthKeyOfNow(){ return todayStr().slice(0,7); }
+function monthTitle(key){ const [y,m] = key.split("-"); return `${y}年${parseInt(m,10)}月`; }
+function shiftMonth(key, delta){
+  let [y,m] = key.split("-").map(Number);
+  const d = new Date(y, m-1+delta, 1);
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
+}
+function daysInMonth(key){
+  let [y,m] = key.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
+}
+const toNum = v => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? n : 0; };
+const toSigned = v => { const n = parseFloat(v); return Number.isFinite(n) && n !== 0 ? n : 0; };
+function money(n){
+  const abs = Math.abs(n);
+  const s = abs.toLocaleString("zh-CN",{minimumFractionDigits:2, maximumFractionDigits:2});
+  return n < 0 ? "-" + s : s;
+}
+const moneyInt = n => Math.round(Math.abs(n)).toLocaleString("zh-CN");
+
+function dailyRate(it){
+  if(it.cycle === "once") return 0;
+  return toNum(it.amount) / DAYS[it.cycle];
+}
+function monthlyOf(it){
+  if(it.cycle === "once") return it.paused ? 0 : toNum(it.amount);
+  return it.paused ? 0 : dailyRate(it) * DAYS.month;
+}
+function flowsOfMonth(key){
+  return state.flows.filter(f => f.date.slice(0,7) === key);
+}
+
+function stats(){
+  const active = state.items.filter(i => !i.paused);
+  const daily = active.reduce((s,i)=>s+dailyRate(i),0);
+  const onceTotal = state.items.filter(i=>i.cycle==="once"&&!i.paused)
+    .reduce((s,i)=>s+toNum(i.amount),0);
+  const days = Math.max(1, Math.floor((Date.now()-state.createdAt)/86400000)+1);
+  const drained = daily*days + onceTotal;
+  return {daily, days, drained, onceTotal,
+    activeCount:active.length, pausedCount:state.items.length-active.length};
+}
+
+/* 可变状态:一律先声明,真实初始化统一在文件末尾 bootstrap() 中执行。
+   千万别在声明处调用任何函数,否则会遇到 TDZ(暂时性死区)导致整段脚本静默崩掉。 */
+let state = null;
+let editingId = null;
+let pendingDelete = null;      // {type:"item"|"flow", id}
+let pickedFlowCat = "food";
+let viewMonth = "";
+let toastTimer = null;
+
+const DEFAULT_BIRTH = "1998-07-24";      // 默认生日:狮子座
+function defaults(){
+  return {version:VERSION, items:[], flows:[], createdAt:Date.now(), birth:DEFAULT_BIRTH};
+}
+function load(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(KEY));
+    if(raw && (Array.isArray(raw.items) || Array.isArray(raw.flows))){
+      return {
+        version: VERSION,
+        birth: (typeof raw.birth === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.birth)) ? raw.birth : DEFAULT_BIRTH,
+        // 每条都要过消毒闸门,脏数据在入口就被丢弃
+        items: (Array.isArray(raw.items) ? raw.items : []).map(coerceItem).filter(Boolean),
+        flows: (Array.isArray(raw.flows) ? raw.flows : []).map(coerceFlow).filter(Boolean),
+        createdAt: typeof raw.createdAt === "number" && Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now()
+      };
+    }
+  }catch(e){}
+  return defaults();
+}
+function save(){
+  try{
+    state.version = VERSION;
+    localStorage.setItem(KEY, JSON.stringify(state));
+  }catch(e){ toast("保存失败:浏览器存储被限制"); }
+}
+
+/* ---------------- 数据消毒闸门(load 与 import 共用同一个) ----------------
+   历史教训:只在导入时消毒是不够的,从 localStorage 读出来的脏数据同样会污染账本。
+   所以这里做成唯一入口,任何进入 state 的条目都必须过这一关。 */
+const DUE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const NUM_RE = /^[+-]?(\d+(\.\d+)?|\.\d+)$/;
+function numFrom(v){
+  if(typeof v === "number") return Number.isFinite(v) ? v : NaN;
+  const s = String(v).trim();
+  return NUM_RE.test(s) ? parseFloat(s) : NaN;
+}
+function uidFor(prefix, parts){
+  if(Array.isArray(parts)) return (prefix||"x") + "h" + contentHash(parts);
+  return (prefix||"x") + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+}
+function contentHash(parts){
+  const s = parts.join("\u0001");
+  let h = 0;
+  for(let i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i)) & 0x7fffffff; }
+  return h.toString(36);
+}
+/* 清洗一条固定开支:不合格返回 null(由调用方丢弃) */
+function coerceItem(i){
+  if(!i) return null;
+  const amt = Math.abs(numFrom(i.amount));
+  const name = String(i.name||"").trim().slice(0,30);
+  if(!name || !Number.isFinite(amt) || amt <= 0) return null;
+  const hadId = typeof i.id === "string" && i.id;
+  return {
+    id: hadId || uidFor("i", [name, i.cat||"", i.cycle||"", amt.toFixed(2), i.due||""]),
+    name,
+    cat: CAT_LABEL[i.cat] ? i.cat : "other",
+    cycle: CYCLE_LABEL[i.cycle] ? i.cycle : "month",
+    amount: amt,
+    due: DUE_RE.test(i.due||"") ? i.due : "",
+    paused: Boolean(i.paused),
+    createdAt: Number.isFinite(i.createdAt) ? i.createdAt : Date.now()
+  };
+}
+/* 清洗一条日常流水(允许负数冲销,但不能是 0) */
+function coerceFlow(x){
+  if(!x || !DUE_RE.test(x.date||"")) return null;
+  const amt = numFrom(x.amount);
+  if(!Number.isFinite(amt) || amt === 0) return null;
+  const hadId = typeof x.id === "string" && x.id;
+  return {
+    id: hadId || uidFor("f", [x.date, x.cat||"", amt.toFixed(2), String(x.note||"")]),
+    cat: FLOW_CAT_LABEL[x.cat] ? x.cat : "fother",
+    amount: amt,
+    note: String(x.note||"").slice(0,40),
+    date: x.date,
+    createdAt: Number.isFinite(x.createdAt) ? x.createdAt : Date.now()
+  };
+}
+
+/* ---------------- 渲染:今日仪表 ---------------- */
+function renderMeter(){
+  const s = stats();
+  const el = $("daily");
+  el.textContent = money(s.daily);
+  el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump");
+
+  $("per-month").innerHTML = "¥" + money(s.daily*DAYS.month) + " <small>/ 月</small>";
+  $("per-year").textContent = "约 ¥" + moneyInt(s.daily*DAYS.year) + " / 年";
+  $("drained").textContent = "¥" + money(s.drained);
+  $("drained-days").textContent = "坚持第 " + s.days + " 天(自 " + fmtDate(state.createdAt) + ")";
+  $("active-count").textContent = s.activeCount + " 笔" + (s.pausedCount ? ` · ${s.pausedCount} 笔已暂停` : "");
+
+  const parts = [];
+  if(s.daily > 0){
+    const teas = s.daily/15, films = s.daily*DAYS.month/40;
+    parts.push("每一天,固定费用都在趁你不注意溜走:大约相当于");
+    parts.push(`<b>${round1(teas)} 杯奶茶</b>(¥15)`);
+    if(films >= 1) parts.push(`,或 <b>${round1(films)} 场电影</b>(¥40/场)`);
+    parts.push(`。一年下来,是 <b>¥${moneyInt(s.daily*DAYS.year)}</b> 的整数大事。`);
+  }else{
+    parts.push("把每一笔固定开支都换算成“每天流走多少”,再相加。");
+  }
+  $("equiv").innerHTML = parts.join("");
+}
+const round1 = n => n >= 100 ? moneyInt(n) : (Math.round(n*10)/10).toString();
+function fmtDate(t){
+  const d = new Date(t);
+  return `${d.getFullYear()}.${pad2(d.getMonth()+1)}.${pad2(d.getDate())}`;
+}
+
+/* ---------------- 日环:今天按时间比例摊掉的固定流失 ----------------
+   这是估算(日均 × 当天已过比例),不冒充实付;口径在界面上写清楚。 */
+function renderDayRing(){
+  const s = stats();
+  const now = new Date();
+  const mins = now.getHours()*60 + now.getMinutes();
+  const frac = mins/1440;
+  const C = 2*Math.PI*70;
+  const ring = $("day-ring-progress");
+  if(ring){
+    ring.setAttribute("stroke-dasharray", C.toFixed(2));
+    ring.setAttribute("stroke-dashoffset", (C*(1-frac)).toFixed(2));
+  }
+  const head = $("day-ring-head");
+  if(head){
+    const ang = -Math.PI/2 + frac*Math.PI*2;
+    head.setAttribute("cx", (80 + 70*Math.cos(ang)).toFixed(2));
+    head.setAttribute("cy", (80 + 70*Math.sin(ang)).toFixed(2));
+  }
+  const amt = $("day-ring-amount");
+  if(amt) amt.textContent = "¥" + money(s.daily * frac);
+  const left = $("day-ring-left");
+  if(left){
+    const rest = 1440 - mins;
+    const h = Math.floor(rest/60), m = rest % 60;
+    left.textContent = (h > 0 ? h + " 小时 " : "") + m + " 分";
+  }
+  const hd = $("hero-date");
+  if(hd) hd.textContent = fmtDate(Date.now());
+}
+
+/* ---------------- 固定支出流:每根刻度代表一笔按期扣款 ---------------- */
+function renderStreak(){
+  const box = $("streak-track");
+  if(!box) return;
+  const items = state.items.filter(i=>!i.paused && dailyRate(i)>0)
+    .sort((a,b)=>dailyRate(b)-dailyRate(a));
+  if(items.length === 0){
+    box.innerHTML = '<span class="streak-empty">还没有固定开支 · 记上一笔,这里就会出现流动的刻度</span>';
+    return;
+  }
+  const maxD = Math.max(...items.map(i=>dailyRate(i)), 0.0001);
+  const one = items.map(it=>{
+    const d = dailyRate(it);
+    const hh = Math.max(22, Math.min(100, d/maxD*100)).toFixed(0);
+    return `<span class="streak-item">
+      <span class="tick" aria-hidden="true"><i style="height:${hh}%"></i></span>
+      ${esc(it.name)}<b>¥${money(d)}</b>
+    </span>`;
+  }).join("");
+  box.innerHTML = one + one;   // 首尾等长,位移 50% 即可无缝循环
+}
+
+function initDayRing(){
+  renderDayRing();
+  if(initDayRing._timer) clearInterval(initDayRing._timer);
+  initDayRing._timer = setInterval(renderDayRing, 60 * 1000);
+}
+
+/* ---------------- 渲染:月度汇总 ---------------- */
+function renderMonth(){
+  $("m-title").textContent = monthTitle(viewMonth);
+  const fixedMonthly = state.items.reduce((s,i)=>s+monthlyOf(i),0);
+  const fmean = flowsOfMonth(viewMonth);
+  const flowSumM = fmean.reduce((s,f)=>s+(parseFloat(f.amount)||0),0);
+  const total = fixedMonthly + flowSumM;
+
+  $("m-total").textContent = money(total);
+  const ghost = $("m-ghost");
+  if(ghost) ghost.textContent = String(parseInt(viewMonth.slice(5,7),10));
+  $("m-fixed").textContent = "¥" + money(fixedMonthly);
+  $("m-flow").textContent = "¥" + money(flowSumM);
+
+  const denom = Math.abs(fixedMonthly) + Math.abs(flowSumM);
+  const wF = denom ? (Math.abs(fixedMonthly)/denom*100).toFixed(1) + "%" : "50%";
+  const wL = denom ? (Math.abs(flowSumM)/denom*100).toFixed(1) + "%" : "50%";
+  $("m-bar-fixed").style.width = wF;
+  $("m-bar-flow").style.width = wL;
+
+  const isCurrent = viewMonth === monthKeyOfNow();
+  const fCount = fmean.filter(f=>(parseFloat(f.amount)||0)>0).length;
+  if(fmean.length === 0){
+    $("m-note").textContent = isCurrent
+      ? "这个月还没有流水。在下方随手记一笔,这里就开始长肉。固定开支始终按天折算。"
+      : "这个月没有流水记录;固定开支仍按天折算显示。";
+  }else{
+    $("m-note").textContent = `本月流水 ${fmean.length} 笔(含 ${fmean.length - fCount} 笔冲销),都是实际划走的钱;固定开支是“按天折算”的预估。`;
+  }
+
+  // 本月进度与月底预估(只看当月,回头看的月份不做外推)
+  const days = daysInMonth(viewMonth);
+  const nowD = new Date();
+  const elapsed = isCurrent ? nowD.getDate() : days;
+  const pct = Math.min(100, Math.round(elapsed / days * 1000) / 10);
+  const pBar = $("m-progress-bar"), pPct = $("m-progress-pct");
+  if(pBar) pBar.style.width = pct + "%";
+  if(pPct) pPct.textContent = pct + "%";
+
+  const projEl = $("proj-amount");
+  if(projEl){
+    if(isCurrent){
+      // 固定开支本身已是整月折算值;流水按“本月日均”外推到剩余天数
+      const avg = elapsed > 0 ? flowSumM / elapsed : 0;
+      const remain = Math.max(0, days - elapsed);
+      const extra = Math.max(0, avg) * remain;
+      projEl.textContent = "¥" + money(fixedMonthly + flowSumM + extra);
+    }else{
+      projEl.textContent = "¥" + money(total);
+    }
+    const tag = document.querySelector(".proj .tag");
+    if(tag) tag.textContent = isCurrent ? "估算" : "已结月";
+  }
+
+  // 逐日笔迹(流水画像的共用数据)
+  const per = dailyFlowSums(viewMonth, flowsOfMonth(viewMonth));
+  const maxDay = Math.max(...per, 0);
+  renderDonut(Math.abs(fixedMonthly), Math.abs(flowSumM));
+  $("chart-combo-sub").textContent =
+    `单日最高 ¥${money(maxDay)} · 月末累计 ¥${money(flowSumM)} · ${daysInMonth(viewMonth)} 天`;
+  // TOP 5 流向
+  const byCat = {};
+  fmean.forEach(f => { byCat[f.cat] = (byCat[f.cat]||0) + (parseFloat(f.amount)||0); });
+  const tops = Object.entries(byCat).sort((a,b)=>b[1]-a[1] || Math.abs(b[1])-Math.abs(a[1])).slice(0,5);
+  $("top-cats").innerHTML = tops.length
+    ? tops.map(([c,v])=>`<div class="tc"><span>${FLOW_CAT_LABEL[c]||"其他消费"}</span><b class="num">¥${money(v)}</b></div>`).join("")
+    : `<div class="tc" style="color:var(--ink-3)">还没有流水。</div>`;
+}
+
+/* ---------------- 纯图表构件(可独立测试) ---------------- */
+function dailyFlowSums(monthKey, flows){
+  const per = new Array(daysInMonth(monthKey)).fill(0);
+  flows.forEach(f => {
+    if(f.date.slice(0,7) !== monthKey) return;    // 月份守卫:只认属于本月的记录
+    const d = parseInt(f.date.slice(8,10),10);
+    if(per[d-1] !== undefined) per[d-1] += (parseFloat(f.amount)||0);
+  });
+  return per;
+}
+
+/* 环图:固定(红)/流水(蓝)占比,外环半径按周长 100 折算 */
+function donutSVG(fixedAbs, flowAbs){
+  const total = fixedAbs + flowAbs;
+  if(total <= 0){
+    return `<svg viewBox="0 0 42 42" role="img" aria-label="暂无数据">
+      <circle cx="21" cy="21" r="20" fill="none" stroke="var(--hair)" stroke-width="2.5"/>
+      <circle cx="21" cy="21" r="15.5" fill="var(--paper)"/>
+      <text x="21" y="24.5" text-anchor="middle" font-size="9" fill="var(--ink-3)">无</text></svg>`;
+  }
+  const seg = Math.max(0.3, Math.min(99.7, flowAbs/total*100));   // 保留一丝红边,两种都占满时不糊边
+  return `<svg viewBox="0 0 42 42" role="img" aria-label="固定开支占 ${Math.round(fixedAbs/total*100)}%,流水占 ${Math.round(flowAbs/total*100)}%">
+    <circle cx="21" cy="21" r="15.9155" fill="none" stroke="var(--accent)" stroke-width="6"/>
+    <circle cx="21" cy="21" r="15.9155" fill="none" stroke="var(--blue)" stroke-width="6"
+      stroke-dasharray="${seg.toFixed(2)} ${(100-seg).toFixed(2)}" transform="rotate(-90 21 21)"/>
+    <circle cx="21" cy="21" r="14" fill="var(--paper)"/></svg>`;
+}
+function renderDonut(fixedAbs, flowAbs){
+  $("m-donut").innerHTML = donutSVG(fixedAbs, flowAbs);
+  const total = fixedAbs + flowAbs;
+  if(total <= 0){
+    $("m-legend").innerHTML = `<div class="dl">本月还没有构成数据</div>`;
+  }else{
+    const fPct = (fixedAbs/total*100).toFixed(1), lPct = (flowAbs/total*100).toFixed(1);
+    $("m-legend").innerHTML = `
+      <div class="dl"><span class="dot dot-fixed"></span><span>固定折算 <b>${fPct}%</b></span></div>
+      <div class="dl"><span class="dot dot-flow"></span><span>日常流水 <b>${lPct}%</b></span></div>
+      <div class="dl" style="color:var(--ink-3);font-size:12.5px">按金额比例分环</div>`;
+  }
+}
+
+/* 组合图:每日支出柱(负数压到基线下,绿色)+ 累计折线(红) */
+function comboSVG(per, monthKey){
+  const days = per.length;
+  let c = 0;
+  const cums = per.map(v => (c += v));
+  const maxBar = Math.max(...per.map(v=>Math.abs(v)), 0.001);
+  const cumMax = Math.max(...cums, 0.001);
+  const cumMin = Math.min(0, ...cums);
+  const cumRange = Math.max(cumMax - cumMin, 0.001);
+
+  const W = 640, H = 205, padL = 6, padR = 6;
+  const baseY = 158, maxH = 112, negH = 26;
+  const slot = (W-padL-padR)/days;
+  const bw = Math.max(3, Math.min(slot-3, 18));
+  const lineY = v => baseY - (v - cumMin)/cumRange*maxH;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="本月逐日支出与累计曲线">`;
+  svg += `<line x1="${padL}" y1="${baseY}" x2="${W-padR}" y2="${baseY}" stroke="var(--hair-2)" stroke-width="1"/>`;
+  [0.33, 0.66, 1].forEach(t=>{
+    svg += `<line x1="${padL}" y1="${(baseY-maxH*t).toFixed(1)}" x2="${W-padR}" y2="${(baseY-maxH*t).toFixed(1)}" stroke="var(--hair)" stroke-width="1" stroke-dasharray="3 4"/>`;
+  });
+  svg += `<text x="${padL}" y="${(baseY-maxH-5).toFixed(1)}" font-size="10" fill="var(--ink-3)">¥${money(maxBar)}</text>`;
+
+  per.forEach((v, i)=>{
+    if(v === 0) return;
+    const x = padL + slot*i + (slot-bw)/2;
+    const tip = `<title>${parseInt(monthKey.slice(5,7),10)}月${i+1}日 ¥${money(v)}</title>`;
+    if(v > 0){
+      const h = Math.max(2, v/maxBar*maxH);
+      svg += `<rect x="${x.toFixed(1)}" y="${(baseY-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="var(--blue)" opacity=".88" rx="1.5">${tip}</rect>`;
+    }else{
+      const h = Math.max(2, Math.abs(v)/maxBar*negH);
+      svg += `<rect class="cb-bar neg" style="animation-delay:${(i*18)}ms" x="${x.toFixed(1)}" y="${baseY}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="var(--ok)" opacity=".88" rx="1.5">${tip}</rect>`;
+    }
+  });
+
+  // 折线下方的渐变面积,给累计量一个体积感
+  const areaPts = cums.map((v,i)=>`${(padL + slot*i + slot/2).toFixed(1)},${lineY(v).toFixed(1)}`);
+  const firstX = (padL + slot*0 + slot/2).toFixed(1), lastX = (padL + slot*(days-1) + slot/2).toFixed(1);
+  svg += `<path class="cb-area" d="M ${firstX} ${baseY} L ${areaPts[0]} L ${areaPts.join(" L ")} L ${lastX} ${baseY} Z" fill="url(#cumGrad)" stroke="none"/>`;
+  svg += `<defs><linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="var(--accent)" stop-opacity=".16"/>
+    <stop offset="100%" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>`;
+
+  const pts = cums.map((v,i)=>`${(padL + slot*i + slot/2).toFixed(1)},${lineY(v).toFixed(1)}`).join(" ");
+  svg += `<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2.25" stroke-linejoin="round"/>`;
+  const lastPt = pts.split(" ").at(-1).split(",").map(Number);
+  svg += `<circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="3" fill="var(--accent)"/>`;
+  svg += `<text x="${padL}" y="${H-10}" font-size="10" fill="var(--ink-3)">1日</text>`;
+  svg += `<text x="${W/2}" y="${H-10}" font-size="10" fill="var(--ink-3)" text-anchor="middle">15日</text>`;
+  svg += `<text x="${W-padR}" y="${H-10}" font-size="10" fill="var(--ink-3)" text-anchor="end">月末</text>`;
+  svg += `</svg>`;
+  return svg;
+}
+
+/* 星期节奏:本月正向消费按周一至周日分布 */
+function weekSVG(wk){
+  const W = 300, H = 205, padL = 8, padR = 8;
+  const baseY = 165, maxH = 118;
+  const slot = (W-padL-padR)/7;
+  const bw = Math.min(slot*0.52, 30);
+  const max = Math.max(...wk, 0.001);
+  const labels = ["周一","周二","周三","周四","周五","周六","周日"];
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="按星期分布的消费节奏">`;
+  svg += `<line x1="${padL}" y1="${baseY}" x2="${W-padR}" y2="${baseY}" stroke="var(--hair-2)" stroke-width="1"/>`;
+  svg += `<text x="${padL}" y="${(baseY-maxH-6).toFixed(1)}" font-size="10" fill="var(--ink-3)">¥${money(max)}</text>`;
+  wk.forEach((v,i)=>{
+    const cx = padL + slot*(i+0.5);
+    const lab = `<title>${labels[i]} ¥${money(v)}</title>`;
+    if(v > 0){
+      const h = Math.max(2, v/max*maxH);
+      svg += `<rect x="${(cx-bw/2).toFixed(1)}" y="${(baseY-h).toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="var(--blue)" opacity=".88" rx="2">${lab}</rect>`;
+    }else{
+      svg += `<rect x="${(cx-bw/2).toFixed(1)}" y="${baseY-2}" width="${bw.toFixed(1)}" height="2" fill="var(--hair)" rx="1">${lab}</rect>`;
+    }
+    svg += `<text x="${cx.toFixed(1)}" y="${baseY+18}" font-size="11" fill="var(--ink-3)" text-anchor="middle">${labels[i]}</text>`;
+  });
+  svg += `</svg>`;
+  return svg;
+}
+
+function renderCharts(){
+  const flows = flowsOfMonth(viewMonth);
+  const box1 = $("chart-combo"), box2 = $("chart-week");
+  if(flows.length === 0){
+    box1.innerHTML = `<div class="chart-empty">这个月还没有流水,记上几笔,画像就出来了</div>`;
+    box2.innerHTML = `<div class="chart-empty">先记一笔,看看哪天最会花</div>`;
+    $("chart-week-sub").textContent = "按星期分布的正向消费";
+    return;
+  }
+  const per = dailyFlowSums(viewMonth, flows);
+  box1.innerHTML = comboSVG(per, viewMonth);
+  const wk = [0,0,0,0,0,0,0];   // 周一..周日
+  flows.forEach(f=>{
+    const a = parseFloat(f.amount)||0;
+    if(a > 0) wk[(new Date(f.date+"T12:00:00").getDay()+6)%7] += a;
+  });
+  box2.innerHTML = weekSVG(wk);
+  const wkNames = ["周一","周二","周三","周四","周五","周六","周日"];
+  const wkTop = wk.indexOf(Math.max(...wk));
+  $("chart-week-sub").textContent =
+    `正向消费 ¥${money(wk.reduce((s,v)=>s+v,0))} · 最旺的是 ${Math.max(...wk)>0 ? wkNames[wkTop] : "暂无正向消费"}`;
+}
+
+/* ---------------- 今日运势(娱乐向) ----------------
+   说明:按“日期 + 生日”做确定性推算(同一天刷新结果稳定),图个生活趣味,
+   不作为任何决策依据,也不会影响账本里的任何数字。 */
+const ZODIACS = [
+  {name:"摩羯座", from:[12,22], to:[1,19],   en:"Capricorn",  line:"稳扎稳打的一段时间"},
+  {name:"水瓶座", from:[1,20],  to:[2,18],   en:"Aquarius",   line:"想法多,落地要挑重点"},
+  {name:"双鱼座", from:[2,19],  to:[3,20],   en:"Pisces",     line:"情绪敏感,账目请先核对"},
+  {name:"白羊座", from:[3,21],  to:[4,19],   en:"Aries",      line:"冲劲足,先看清楚再下手"},
+  {name:"金牛座", from:[4,20],  to:[5,20],   en:"Taurus",     line:"适合做长期主义的选择"},
+  {name:"双子座", from:[5,21],  to:[6,21],   en:"Gemini",     line:"信息很杂,别被种草牵着走"},
+  {name:"巨蟹座", from:[6,22],  to:[7,22],   en:"Cancer",     line:"顾家也顾自己,预算留一点弹性"},
+  {name:"狮子座", from:[7,23],  to:[8,22],   en:"Leo",        line:"面子可以适当放一放,里子更值钱"},
+  {name:"处女座", from:[8,23],  to:[9,22],   en:"Virgo",      line:"细节到位,别把标准抬得太累"},
+  {name:"天秤座", from:[9,23],  to:[10,23],  en:"Libra",      line:"选择困难时,先砍掉最不常用的那笔"},
+  {name:"天蝎座", from:[10,24], to:[11,22],  en:"Scorpio",    line:"盯得紧是优点,别把自己盯焦虑了"},
+  {name:"射手座", from:[11,23], to:[12,21],  en:"Sagittarius",line:"想看的风景很多,行程单排个优先级"}
+];
+function zodiacOf(month, day){
+  for(const z of ZODIACS){
+    const fm = z.from[0], fd = z.from[1], tm = z.to[0], td = z.to[1];
+    if((month === fm && day >= fd) || (month === tm && day <= td)) return z;
+  }
+  return ZODIACS[7];
+}
+function zodiacRangeText(z){
+  return `${z.from[0]}月${z.from[1]}日 - ${z.to[0]}月${z.to[1]}日`;
+}
+function hashStr(s){
+  let h = 2166136261;
+  for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function rngFrom(seed){
+  let a = seed >>> 0;
+  return ()=>{
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const F_POOLS = {
+  luckyColor:[["暖阳金","#d9a032"],["松石绿","#2f9e8f"],["雾霭蓝","#5b8def"],
+              ["陶土红","#c2543d"],["淡紫灰","#8d7fb3"],["月白","#e8e6e2"]],
+  direction:["东南","正南","西北","东北","西南","正东"],
+  number:[3,5,7,8,9,12,21,26],
+  good:["把订阅列表翻一遍,该退的退掉",
+        "给这周的流水打个总结标签",
+        "给下个月设一个“不冲动”上限",
+        "核对一次自动续费的到期日",
+        "把攒下的零钱转去一个看不到的地方",
+        "给自己做一顿不用外卖的饭"],
+  bad:["深夜刷购物区",
+       "为了凑满减免多买一件",
+       "为一个只用过两次的会员续年费",
+       "因为心情好就放宽容错率",
+       "把“先记着以后再说”当解决方法"],
+  money:["有小笔进账或返现的机会,记得顺手记一笔",
+         "适合复盘自动扣费,容易发现长期漏财项",
+         "对大额支出多一点耐心,放一天再决定更稳",
+         "人情往来偏多,预算里留一点弹性"],
+  career:["适合处理拖了很久的琐事,完成感会很好",
+          "沟通顺畅,把想法说清楚比默默做更重要",
+          "注意力容易被打断,优先一件事做完再换"],
+  love:["把话说明白,比让他猜更省力",
+        "适合安排一个低成本的共同活动",
+        "别把工作里的疲惫带进对话"],
+  health:["睡眠比补品管用,今晚早点睡",
+          "久坐久了站起来走几分钟",
+          "喝水这件小事今天容易被忘"]
+};
+function fortuneFor(dateStr, birthStr){
+  const rnd = rngFrom(hashStr(dateStr + "|" + birthStr));
+  const pick = arr => arr[Math.floor(rnd() * arr.length)];
+  const score = base => Math.min(99, Math.max(45, Math.round(base + rnd()*36 - 14)));
+  const parts = birthStr.split("-").map(Number);
+  const by = parts[0], bm = parts[1], bd = parts[2];
+  const z = zodiacOf(bm, bd);
+
+  const today = new Date(dateStr + "T12:00:00");
+  const todayMid = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  let nextBirth = new Date(today.getFullYear(), bm-1, bd);
+  if(nextBirth < todayMid) nextBirth = new Date(today.getFullYear()+1, bm-1, bd);
+  const daysToBirth = Math.round((nextBirth - todayMid) / 86400000);
+  let age = today.getFullYear() - by;
+  if(today.getMonth()+1 < bm || (today.getMonth()+1 === bm && today.getDate() < bd)) age--;
+
+  const luck = pick(F_POOLS.luckyColor);
+  return {
+    zodiac: z,
+    range: zodiacRangeText(z),
+    age, daysToBirth,
+    scores: { 财运: score(72), 事业: score(70), 感情: score(68), 健康: score(74) },
+    luckyColor: {name: luck[0], hex: luck[1]},
+    luckyNumber: pick(F_POOLS.number),
+    direction: pick(F_POOLS.direction),
+    good: pick(F_POOLS.good),
+    bad: pick(F_POOLS.bad),
+    moneyLine: pick(F_POOLS.money),
+    careerLine: pick(F_POOLS.career),
+    loveLine: pick(F_POOLS.love),
+    healthLine: pick(F_POOLS.health)
+  };
+}
+/* 近期解析:写成一段长期可读的说明,而不是今天的心情 */
+function recentReading(z, f){
+  if(z.name === "狮子座"){
+    return "狮子座这段时间的主旋律是「收」:生日季过去之后,适合把上半年铺开的东西慢慢收回口袋。" +
+      "你天生不缺行动力,缺的是给行动排优先级 —— 近期容易同时开着好几件事,每件都做八分," +
+      "回头看却少一个真正收尾的。财务上的重点是识别「长期小额出血」:那些每月自动扣、" +
+      "你几乎不再想起的选项,加起来往往比一次大额消费更戳痛感。建议先把订阅清单拉出来过一遍,再谈预算。" +
+      `今天可以做一件小事:${f.good}。做完它,今天的财运分就已经落在你手里了。`;
+  }
+  return `${z.name}近期的主旋律是「取舍」:${z.line}。` +
+    "财务上同样建议先清理自动扣费项,再看 discretionary (可支配) 支出。" +
+    `今天可以做一件小事:${f.good}。`;
+}
+/* ---------------- 入场编排与滚动进度 ----------------
+   用 IntersectionObserver 做渐进显现,不监听 scroll;不支持时内容照常显示。 */
+function initReveals(){
+  const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if(reduced || !("IntersectionObserver" in window)) return;
+  const secs = Array.prototype.slice.call(document.querySelectorAll("section:not(.hero)"));
+  const io = new IntersectionObserver(entries=>{
+    entries.forEach(en=>{
+      if(en.isIntersecting){ en.target.classList.add("in"); io.unobserve(en.target); }
+    });
+  }, {rootMargin:"0px 0px -6% 0px", threshold:.05});
+  secs.forEach((s,i)=>{
+    s.classList.add("reveal");
+    s.style.setProperty("--i", String(Math.min(i,3)));
+    io.observe(s);
+  });
+}
+
+/* 老浏览器没有 scroll-driven animation 时,用 rAF 节流的滚动进度条兜底 */
+function initScrollProgress(){
+  const bar = $("scroll-bar");
+  if(!bar) return;
+  const supportsTimeline = window.CSS && CSS.supports && CSS.supports("animation-timeline: scroll()");
+  if(supportsTimeline) return;
+  let ticking = false;
+  const update = ()=>{
+    const h = document.documentElement.scrollHeight - window.innerHeight;
+    const p = h > 0 ? Math.min(1, window.scrollY / h) : 0;
+    bar.style.width = (p*100).toFixed(2) + "%";
+    ticking = false;
+  };
+  window.addEventListener("scroll", ()=>{
+    if(!ticking){ ticking = true; raf(update); }
+  }, {passive:true});
+  update();
+}
+
+/* 动画调度:某些环境(老 webview / 测试容器)没有 requestAnimationFrame,
+   缺失时退化为 setTimeout,保证页面照常工作,只是没有过渡效果。 */
+function raf(fn){
+  if(typeof requestAnimationFrame === "function") return requestAnimationFrame(fn);
+  return setTimeout(fn, 16);
+}
+
+function renderFortune(){
+  const dateStr = todayStr();
+  const birth = state.birth || DEFAULT_BIRTH;
+  const f = fortuneFor(dateStr, birth);
+  $("f-sign").textContent = f.zodiac.name;
+  $("f-range").textContent = f.range;
+  $("f-meta").textContent =
+    `出生 ${birth.replace(/-/g,".")} · 实岁 ${f.age} · 距下次生日 ${f.daysToBirth} 天`;
+
+  const vals = Object.values(f.scores);
+  const total = Math.round(vals.reduce((s,v)=>s+v,0) / vals.length);
+  $("f-total").textContent = total;
+
+  const order = ["财运","事业","感情","健康"];
+  $("f-bars").innerHTML = order.map(k=>`
+    <div class="f-bar">
+      <span class="fb-name">${k}</span>
+      <span class="fb-track"><i class="fb-fill ${k==="财运"?"money":""}" data-w="${f.scores[k]}"></i></span>
+      <span class="fb-val">${f.scores[k]}</span>
+    </div>`).join("");
+  raf(()=>{
+    document.querySelectorAll(".fb-fill").forEach(el=>{ el.style.width = el.dataset.w + "%"; });
+  });
+
+  $("f-lucky").innerHTML = `
+    <span class="f-chip"><i class="swatch" style="background:${f.luckyColor.hex}"></i>幸运色 ${f.luckyColor.name}</span>
+    <span class="f-chip">幸运数字 ${f.luckyNumber}</span>
+    <span class="f-chip">贵人方位 ${f.direction}</span>`;
+  $("f-yj").innerHTML = `<span><b>宜</b> ${f.good}</span><span><b>忌</b> ${f.bad}</span>`;
+  $("f-read").innerHTML = `
+    <h4>近期解析 · ${f.zodiac.name}(${f.zodiac.en})</h4>
+    <div>${recentReading(f.zodiac, f)}</div>
+    <div style="margin-top:8px"><b>今日财运</b> ${f.moneyLine};<b>事业</b> ${f.careerLine};<b>感情</b> ${f.loveLine};<b>健康</b> ${f.healthLine}</div>`;
+}
+function initBirthInput(){
+  const el = $("f-birth");
+  el.value = state.birth || DEFAULT_BIRTH;
+  el.addEventListener("change", e=>{
+    const v = e.target.value;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){ e.target.value = state.birth || DEFAULT_BIRTH; return; }
+    state.birth = v; save(); renderFortune(); toast("运势已按新生日重算");
+  });
+}
+
+/* ---------------- 渲染:流水清单(本月) ---------------- */
+function renderFlows(){
+  const box = $("flow-list");
+  const list = flowsOfMonth(viewMonth).slice().sort((a,b)=>
+    b.date.localeCompare(a.date) || (b.createdAt||0)-(a.createdAt||0));
+  if(list.length === 0){
+    box.innerHTML = `
+      <div class="empty">
+        <div class="big">◌</div>
+        <p>${viewMonth === monthKeyOfNow()
+          ? "本月还没有流水。左边的随手记,三秒就能记完第一笔。"
+          : monthTitle(viewMonth) + " 没有流水记录,用 ◀ ▶ 换个月看看。"}</p>
+      </div>`;
+    $("flow-sub").textContent = "正在展示 " + monthTitle(viewMonth) + " 的记录";
+    return;
+  }
+  const byDate = {};
+  list.forEach(f => { (byDate[f.date] = byDate[f.date] || []).push(f); });
+  const dates = Object.keys(byDate).sort((a,b)=>b.localeCompare(a));
+  const WEEK = ["周日","周一","周二","周三","周四","周五","周六"];
+
+  box.innerHTML = dates.map(d=>{
+    const rows = byDate[d];
+    const daySum = rows.reduce((s,f)=>s+(parseFloat(f.amount)||0),0);
+    const wd = WEEK[new Date(d+"T12:00:00").getDay()];
+    const isToday = d === todayStr();
+    return `
+      <div class="flow-date">
+        <span class="fd-label">${isToday ? "今天" : `${parseInt(d.slice(5,7),10)}月${parseInt(d.slice(8,10),10)}日`}</span>
+        <span class="wd">${wd}</span>
+        <span class="day-sum num">当日 ¥${money(daySum)}</span>
+      </div>
+      ${rows.map(f=>{
+        const amt = parseFloat(f.amount)||0;
+        return `
+        <div class="flow-row" data-id="${f.id}">
+          <span class="cat-chip ${amt<0?"acc":""}">${FLOW_CAT_LABEL[f.cat]||"其他消费"}</span>
+          <span class="note ${f.note ? "" : "none"}">${f.note ? esc(f.note) : "没有备注"}</span>
+          <span class="f-time num">${(f.createdAt ? new Date(f.createdAt) : new Date()).toTimeString().slice(0,5)}</span>
+          <span class="f-amt num ${amt<0?"neg":""}">${amt<0?"":"+"}¥${money(amt)}</span>
+          <button class="del" data-act="delflow" type="button" aria-label="删除这条流水">✕</button>
+        </div>`;
+      }).join("")}`;
+  }).join("");
+  $("flow-sub").textContent =
+    `正在展示 ${monthTitle(viewMonth)} 的记录,共 ${list.length} 笔`;
+}
+
+/* ---------------- 渲染:固定清单 ---------------- */
+function renderList(){
+  const box = $("list");
+  if(state.items.length === 0){
+    box.innerHTML = `
+      <div class="empty">
+        <span class="big">还没有记录</span>
+        正在交钱的会员、话费、房租、水电,记进来就会开始为你计损。
+        <div><button class="btn btn-primary" id="btn-load-demo" type="button" style="margin-top:18px">没有头绪?看看示例</button></div>
+      </div>`;
+    $("btn-load-demo").addEventListener("click", loadDemo);
+    return;
+  }
+  const withRate = state.items.map(i => ({...i, _d: dailyRate(i)}));
+  const max = Math.max(...withRate.filter(i=>i._d>0).map(i=>i._d), 0.0001);
+  const rows = withRate
+    .sort((a,b)=> b._d - a._d || (b.createdAt||0)-(a.createdAt||0))
+    .map((it, idx) => {
+      const cat = CATS.find(c=>c.id===it.cat) || CATS[4];
+      const dTxt = it._d > 0
+        ? "¥" + money(it._d) + "<span class='per'>/天</span>"
+        : "¥" + money(toNum(it.amount)) + "<span class='per'>单次</span>";
+      const mTxt = it.cycle === "once" ? "不计入日常"
+        : "月 ¥" + money(dailyRate(it)*DAYS.month);
+      const barW = it._d > 0 ? Math.max(2, it._d/max*100).toFixed(1) + "%" : "0%";
+      return `
+      <div class="item ${it.paused?"paused":""}" data-id="${it.id}">
+        <span class="item-idx">${String(idx+1).padStart(2,"0")}</span>
+        <div class="item-main">
+          <div class="name">${esc(it.name)}<span class="lead" aria-hidden="true"></span>
+            <span class="cat-chip ${it.paused?"":"acc"}">${cat.label}</span>
+            ${it.due && !it.paused ? dueText(it) : ""}
+          </div>
+        </div>
+        <span class="cat-chip">${CYCLE_LABEL[it.cycle]}</span>
+        <div class="amounts"><span class="d num">${dTxt}</span><span class="m num">${mTxt}</span></div>
+        <div class="item-actions">
+          <button class="btn btn-sm" data-act="edit" type="button">编辑</button>
+          <button class="btn btn-sm" data-act="toggle" type="button">${it.paused?"恢复":"暂停"}</button>
+          <button class="btn btn-sm" data-act="del" type="button">删除</button>
+        </div>
+        ${it._d>0 ? `<div class="item-rank" aria-hidden="true"><i style="width:${barW}"></i></div>` : ""}
+      </div>`;
+    }).join("");
+
+  box.innerHTML = `
+    <div class="fixed-head" aria-hidden="true">
+      <span>#</span><span>项目</span><span>周期</span><span>日均</span><span></span>
+    </div>` + rows;
+}
+
+function dueText(it){
+  if(!it.paused && it.due){
+    const t = Math.ceil((new Date(it.due+"T23:59:59") - Date.now())/86400000);
+    if(t > 0){
+      const warn = t <= 3 ? " warn" : "";
+      return `<span class="due${warn}">下次扣费:${t===1?"明天":t+" 天后"}</span>`;
+    }
+  }
+  return "";
+}
+const esc = s => String(s).replace(/[&<>"']/g, m =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+
+/* ---------------- 渲染:固定分类 ---------------- */
+function renderCats(){
+  const box = $("cats");
+  const perCat = CATS.map(c=>{
+    const items = state.items.filter(i=>i.cat===c.id && !i.paused);
+    return {label:c.label, d:items.reduce((s,i)=>s+dailyRate(i),0), n:items.length};
+  });
+  const max = Math.max(...perCat.map(c=>c.d), 0);
+  const totalDaily = perCat.reduce((s,c)=>s+c.d,0);
+  const rows = perCat.filter(c=>c.n>0).map(c=>{
+    const pct = totalDaily ? (c.d/totalDaily*100) : 0;
+    return `
+    <div class="cat-block">
+      <div class="cat-row">
+        <span class="c-name">${c.label}<span class="lead" aria-hidden="true"></span></span>
+        <span class="c-amounts num"><b>¥${money(c.d)}</b><span class="per"> / 天</span></span>
+        <span class="c-pct num">${pct.toFixed(0)}%</span>
+      </div>
+      <div class="cat-bar" aria-hidden="true"><i style="width:${pct.toFixed(1)}%"></i></div>
+    </div>`;
+  }).join("");
+  box.innerHTML = rows
+    || `<p style="color:var(--ink-3);font-size:12px;text-align:center;padding:18px 0">还没有流动中的固定开支。</p>`;
+}
+
+/* ---------------- 随手记 ---------------- */
+function fillFlowChips(){
+  $("flow-chips").innerHTML = FLOW_CATS.map(c=>
+    `<button class="chip" type="button" data-cat="${c.id}" aria-pressed="${c.id===pickedFlowCat}">${c.label}</button>`).join("");
+}
+function flowDateValid(s){
+  if(!s) return false;
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+$("flow-chips").addEventListener("click", e=>{
+  const chip = e.target.closest(".chip"); if(!chip) return;
+  pickedFlowCat = chip.dataset.cat;
+  fillFlowChips();
+});
+$("flow-form").addEventListener("submit", e=>{
+  e.preventDefault();
+  const err = $("flow-error");
+  const amt = toSigned($("f-flow-amt").value);
+  const date = $("f-flow-date").value;
+  if(amt === 0){ err.textContent = "金额不能是 0"; err.hidden = false; return; }
+  if(!flowDateValid(date)){ err.textContent = "日期格式不对,选一个真实日子"; err.hidden = false; return; }
+  err.hidden = true;
+  state.flows.push({
+    id:"f"+Date.now().toString(36)+Math.random().toString(36).slice(2,6),
+    cat:pickedFlowCat, amount:amt, note:$("f-flow-note").value.trim(),
+    date, createdAt:Date.now()
+  });
+  $("f-flow-amt").value = ""; $("f-flow-note").value = "";
+  $("f-flow-date").value = todayStr();
+  if(date.slice(0,7) !== viewMonth){ viewMonth = date.slice(0,7); toast("已记入 " + monthTitle(viewMonth)); }
+  else{ toast(amt>0 ? "已记下:¥"+money(amt) : "已记一笔冲销:¥"+money(amt)); }
+  save(); renderAll();
+});
+
+/* ---------------- 固定开支表单 ---------------- */
+function fillCatSelect(){
+  $("f-cat").innerHTML = CATS.map(c=>`<option value="${c.id}">${c.label}</option>`).join("");
+}
+$("form").addEventListener("submit", e=>{
+  e.preventDefault();
+  const name = $("f-name").value.trim();
+  const amount = toNum($("f-amount").value);
+  const err = $("form-error");
+  if(!name){ showFormError(err,"先给它起个名字"); return; }
+  if(!amount){ showFormError(err,"金额需要是大于 0 的数字"); return; }
+  err.hidden = true;
+
+  const item = {
+    id: editingId || ("i" + Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
+    name, cat:$("f-cat").value, amount, cycle:$("f-cycle").value,
+    due:$("f-date").value || "", paused:false, createdAt:Date.now()
+  };
+  if(editingId){
+    const i = state.items.findIndex(x=>x.id===editingId);
+    item.createdAt = state.items[i].createdAt;
+    item.paused = state.items[i].paused;
+    state.items[i] = item;
+    toast("已更新");
+  }else{
+    state.items.push(item);
+    toast(`已加入:每天流走 ¥${money(item.cycle==="once"?0:dailyRate(item))}`);
+  }
+  exitEdit(); save(); renderAll();
+});
+function showFormError(el, msg){ el.textContent = msg; el.hidden = false; }
+function startEdit(id){
+  const it = state.items.find(x=>x.id===id); if(!it) return;
+  editingId = id;
+  $("f-name").value = it.name; $("f-cat").value = it.cat;
+  $("f-amount").value = it.amount; $("f-cycle").value = it.cycle;
+  $("f-date").value = it.due || "";
+  $("btn-save").textContent = "保存修改";
+  $("btn-cancel").hidden = false;
+  $("editing-name").textContent = it.name;
+  $("editing-note").hidden = false;
+  // 滚动失败(部分环境不支持)不能连累后面的聚焦,单独兜住
+  try{ window.scrollTo({top:0, behavior:"smooth"}); }catch(e){}
+  try{ $("f-name").focus(); }catch(e){ setTimeout(()=>{ try{ $("f-name").focus(); }catch(_){} }, 350); }
+}
+function exitEdit(){
+  editingId = null; $("form").reset();
+  $("btn-save").textContent = "添加";
+  $("btn-cancel").hidden = true;
+  $("editing-note").hidden = true;
+  $("form-error").hidden = true;
+}
+$("btn-cancel").addEventListener("click", exitEdit);
+
+/* ---------------- 清单事件(委托) ---------------- */
+$("list").addEventListener("click", e=>{
+  const btn = e.target.closest("button[data-act]"); if(!btn) return;
+  const id = btn.closest(".item").dataset.id;
+  const it = state.items.find(x=>x.id===id); if(!it) return;
+  if(btn.dataset.act === "edit") startEdit(id);
+  if(btn.dataset.act === "toggle"){
+    it.paused = !it.paused;
+    toast(it.paused ? "已暂停,不再计入流失" : "已恢复计损");
+    save(); renderAll();
+  }
+  if(btn.dataset.act === "del"){
+    pendingDelete = {type:"item", id};
+    $("confirm-title").textContent = "删除这笔固定开支?";
+    $("confirm-text").textContent = `「${it.name}」将被永久删除,无法恢复(除非有备份)。`;
+    $("confirm-mask").classList.add("open");
+  }
+});
+$("flow-list").addEventListener("click", e=>{
+  const btn = e.target.closest("button[data-act='delflow']"); if(!btn) return;
+  const id = btn.closest(".flow-row").dataset.id;
+  const f = state.flows.find(x=>x.id===id); if(!f) return;
+  pendingDelete = {type:"flow", id};
+  $("confirm-title").textContent = "删除这条流水?";
+  $("confirm-text").textContent = `${f.date} · ${FLOW_CAT_LABEL[f.cat]||"其他消费"} · ¥${money(parseFloat(f.amount)||0)} 将被永久删除(除非有备份)。`;
+  $("confirm-mask").classList.add("open");
+});
+$("confirm-cancel").addEventListener("click", ()=> $("confirm-mask").classList.remove("open"));
+$("confirm-mask").addEventListener("click", e=>{
+  if(e.target === e.currentTarget) $("confirm-mask").classList.remove("open");
+});
+$("confirm-ok").addEventListener("click", ()=>{
+  if(pendingDelete){
+    if(pendingDelete.type === "item")
+      state.items = state.items.filter(x=>x.id !== pendingDelete.id);
+    else{
+      const idx = state.flows.findIndex(x=>x.id === pendingDelete.id);
+      if(idx > -1) state.flows.splice(idx,1);
+    }
+  }
+  $("confirm-mask").classList.remove("open");
+  toast("已删除"); save(); renderAll();
+});
+
+/* ---------------- 月度导航 ---------------- */
+$("m-prev").addEventListener("click", ()=>{ viewMonth = shiftMonth(viewMonth,-1); renderAll(); });
+$("m-next").addEventListener("click", ()=>{ viewMonth = shiftMonth(viewMonth, 1); renderAll(); });
+$("m-today").addEventListener("click", ()=>{ viewMonth = monthKeyOfNow(); renderAll(); });
+
+/* ---------------- 备份 ---------------- */
+$("btn-export").addEventListener("click", ()=>{
+  if(state.items.length === 0 && state.flows.length === 0){ toast("账本是空的,先记几笔"); return; }
+  state.version = VERSION;                                  // 导出前补版本戳,别让备份缺标识
+  const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "漏钱账本备份-" + todayStr() + ".json";
+  a.click(); URL.revokeObjectURL(a.href);
+  toast("备份已下载");
+});
+$("btn-import").addEventListener("click", ()=> { try{ $("file-import").click(); }catch(e){ toast("无法打开文件选择器,请重试"); } });
+$("file-import").addEventListener("change", e=>{
+  const f = e.target.files && e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const raw = JSON.parse(r.result);
+      if(!raw || (!Array.isArray(raw.items) && !Array.isArray(raw.flows))){
+        toast("文件格式不对,导入失败"); e.target.value = ""; return;
+      }
+      let addedItems = 0, addedFlows = 0, fixedIds = 0;
+      if(!Array.isArray(state.items)) state.items = [];
+      if(!Array.isArray(state.flows)) state.flows = [];
+
+      const seenItem = new Set(state.items.map(x=>x.id));
+      (raw.items||[]).forEach(raw_=>{
+        const clean = coerceItem(raw_);                       // 同一道消毒闸门
+        if(!clean) return;
+        const hadId = typeof raw_.id === "string" && raw_.id;
+        if(seenItem.has(clean.id)) return;                    // 按 id 去重
+        seenItem.add(clean.id);
+        state.items.push(clean);
+        addedItems++; if(!hadId) fixedIds++;                  // 只统计真入库的
+      });
+
+      const seenFlow = new Set(state.flows.map(x=>x.id));
+      (raw.flows||[]).forEach(raw_=>{
+        const clean = coerceFlow(raw_);
+        if(!clean) return;
+        const hadId = typeof raw_.id === "string" && raw_.id;
+        if(seenFlow.has(clean.id)) return;
+        seenFlow.add(clean.id);
+        state.flows.push(clean);
+        addedFlows++; if(!hadId) fixedIds++;
+      });
+
+      if(typeof raw.createdAt === "number" && Number.isFinite(raw.createdAt))
+        state.createdAt = Math.min(state.createdAt, raw.createdAt);
+
+      if(addedItems + addedFlows + fixedIds > 0){
+        save(); exitEdit(); renderAll();
+        toast(`导入成功:固定开支 +${addedItems},流水 +${addedFlows}` +
+              (fixedIds ? `(补齐 ${fixedIds} 个缺失 ID)` : ""));
+      }else{
+        toast("备份与当前账本一致,没有新内容");
+      }
+    }catch(err){ toast("文件解析失败,不是有效的 JSON"); }
+    e.target.value = "";   // 允许重复选择同一个文件
+  };
+  r.onerror = () => { toast("文件读取失败"); e.target.value = ""; };
+  r.readAsText(f);
+});
+$("btn-clear").addEventListener("click", ()=>{
+  if(state.items.length === 0 && state.flows.length === 0){ toast("已经是空的了"); return; }
+  if(confirm("清空全部数据(固定开支 + 日常流水)?建议先导出备份。")){
+    state = defaults(); save(); exitEdit(); renderAll(); toast("已清空");
+  }
+});
+
+/* ---------------- 示例 ---------------- */
+function loadDemo(){
+  if((state.items.length || state.flows.length) &&
+     !confirm("会在现有数据之外追加示例,不会覆盖,继续吗?")) return;
+  const nextDue = () => {
+    const t = new Date(Date.now() + 86400000*9);
+    return `${t.getFullYear()}-${pad2(t.getMonth()+1)}-${pad2(t.getDate())}`;
+  };
+  const dayOffset = n => {
+    const t = new Date(Date.now() + n*86400000);
+    return `${t.getFullYear()}-${pad2(t.getMonth()+1)}-${pad2(t.getDate())}`;
+  };
+  const demoItems = [
+    {name:"视频网站会员", cat:"vip", amount:25, cycle:"month", due:""},
+    {name:"手机话费", cat:"comm", amount:59, cycle:"month", due:nextDue()},
+    {name:"家庭宽带", cat:"comm", amount:720, cycle:"year", due:""},
+    {name:"水电燃气预缴", cat:"util", amount:260, cycle:"month", due:""},
+  ];
+  if(state.items.length === 0) demoItems.unshift({name:"房租", cat:"rent", amount:2800, cycle:"month", due:""});
+  demoItems.forEach(x => state.items.push({id:uid(), ...x, paused:false, createdAt:Date.now()}));
+
+  const demoFlows = [
+    {cat:"food",  amount:28,   note:"公司楼下午饭", date:todayStr()},
+    {cat:"cafe",  amount:16,   note:"冰美式",       date:todayStr()},
+    {cat:"move",  amount:12,   note:"地铁往返",     date:todayStr()},
+    {cat:"food",  amount:65,   note:"火锅,和同事", date:dayOffset(-1)},
+    {cat:"shop",  amount:126,  note:"纸巾洗衣液",   date:dayOffset(-2)},
+    {cat:"food",  amount:-65,  note:"记错,冲昨天的火锅", date:dayOffset(-1)},
+  ];
+  demoFlows.forEach(x => state.flows.push({id:uid(), ...x, createdAt:Date.now()}));
+
+  function uid(){ return "d"+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+  save(); renderAll(); toast("示例已加入,数字开始跳了");
+}
+$("btn-demo").addEventListener("click", loadDemo);
+
+/* ---------------- 杂项 ---------------- */
+function toast(msg){
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+function renderAll(){ renderMeter(); renderFortune(); renderStreak(); renderDayRing(); renderMonth(); renderCharts(); renderFlows(); renderList(); renderCats(); }
+
+/* 每天跨过零点时自动刷新“今天”与累计 */
+function scheduleMidnight(){
+  const now = new Date();
+  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 0, 0, 30);
+  setTimeout(()=>{ renderAll(); scheduleMidnight(); }, next - now);
+}
+
+/* ---------------- 初始化入口(唯一) ----------------
+   所有依赖 DOM 的运行时动作都只在这里发生一次,顺序自上而下,便于走查。 */
+function bootstrap(){
+  state = load();
+  viewMonth = monthKeyOfNow();
+  pickedFlowCat = FLOW_CATS[0].id;
+  $("f-flow-date").value = todayStr();
+  initBirthInput();
+  fillFlowChips();
+  fillCatSelect();
+  renderAll();
+  initDayRing();
+  initReveals();
+  initScrollProgress();
+  scheduleMidnight();
+}
+
+/* 启动失败必须看得见:以前这类错误只会表现为“按钮点了没反应”,
+   现在直接在页顶显示红条,别再让问题变成哑谜。 */
+try{
+  bootstrap();
+}catch(err){
+  const box = document.createElement("div");
+  box.setAttribute("role", "alert");
+  box.textContent = "账本没能正常启动:" + (err && err.message ? err.message : String(err)) +
+                    "。请点“导出备份”保存数据后刷新重试。";
+  box.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:999;background:#b42318;color:#fff;" +
+                      "padding:12px 16px;font:600 14px/1.5 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif";
+  document.body.appendChild(box);
+  throw err;
+}
+</script>
+</body>
+</html>
