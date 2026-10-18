@@ -5,7 +5,7 @@
 
 单文件、离线、零依赖。双击 `index.html` 就能用,数据只存在浏览器 localStorage 里。
 
-![桌面首屏](docs/preview/01-桌面-仪器带.png)
+![桌面首屏](docs/preview/01-desktop-hero.png)
 
 ## 它为什么存在
 
@@ -84,7 +84,7 @@ node tests/regression.js
 覆盖:冷启动、示例数据、快记与撤销、固定开支增删改停、持久化、导出导入往返、
 脏存档容错、`requestAnimationFrame` 缺失环境、运势模块、键盘与弹窗 —— 共 64 项断言。
 
-开发期还使用无头 Chrome 在 1440 / 1024 / 768 / 390 四个宽度截图核对,截图见 `docs/preview/`。
+开发期还使用无头 Chrome 在 1440 / 1024 / 768 / 390 四个宽度截图核对,截图见 `docs/preview/`(桌面仪器带、本月流失、流水明细、移动端首屏与清单)。
 
 ## 项目结构
 
